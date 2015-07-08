@@ -31,6 +31,8 @@ const DND = imports.ui.dnd;
 
 const Main = imports.ui.main;
 
+const SLIDER_SCROLL_STEP = 0.05; /* Slider scrolling step in % */
+
 function ColorChooser() {
    this._init.apply(this, arguments);
 }
@@ -39,7 +41,7 @@ ColorChooser.prototype = {
    _init: function(menu) {
       try {
          this.menu = menu;
-         let [res, color] = Clutter.Color.from_string("#FF0000");
+         let [res, color] = Clutter.Color.from_string("#FF000000");
          this.selectedColor = color;
 
          this.spectrum = new ScaleSpectrum(this.selectedColor, [2, -1, 3, -2, 1, -3]);
@@ -94,12 +96,7 @@ ColorChooser.prototype = {
       let dropper = new EyeDropper(this, Lang.bind(this, this._onPickerColor));
    },
 
-   _onPickerColor: function(pointer) {
-      let [mX, mY, mask] = pointer;
-      let window = Gdk.Screen.get_default().get_root_window();
-      let pixbuf = Gdk.pixbuf_get_from_window(window, mX, mY, 1, 1);
-      let data = pixbuf.get_pixels();
-      let color = Clutter.Color.new(data[0], data[1], data[2], 255);
+   _onPickerColor: function(color) {
       this.setCurrentColor(color);
    },
 
@@ -444,7 +441,7 @@ ScaleSpectrum.prototype = {
       this._motionId = 0;
       this._container = new St.Bin({ x_fill: true, y_fill: true, x_align: St.Align.START });
       this._container.style = "min-width: 20px; min-height: 200px;";
-      this._data = new Array(4*sequence.length*256);
+      this._data = new Array(4*(sequence.length*255 + 1));
       this._imageActor = this._getSpectrumImage();
       this._generateSpectrum(initColor, sequence);
       this._container.set_child(this._imageActor);
@@ -463,7 +460,7 @@ ScaleSpectrum.prototype = {
    _reportChange: function() {
       let colorPos = 4*parseInt(this._value*this._data.length/4);
       if(colorPos > this._data.length - 4)
-         colorPos = this._data.length - 5;
+         colorPos = this._data.length - 4;
       let color = Clutter.Color.new(this._data[colorPos], this._data[colorPos + 1], this._data[colorPos + 2], 255);
       this.emit('value-changed', color);
       this.emit('color-change', color);
@@ -508,24 +505,26 @@ ScaleSpectrum.prototype = {
    },
 
    _generateSpectrum: function(initColor, sequence) {
-      let selected, sign, pos;
+      let pos; let sign = 0; let index = 0;
       let color = [initColor.red, initColor.green, initColor.blue];
-      let index = -1;
       let maxValue = this._data.length/4;
+      let selected = Math.abs(sequence[index]) - 1;
       for (let x = 0; x < maxValue; x++) {
-         pos = 4 * x;
-         if(index < sequence.length) {
-         if(x % 255 == 0) {
-            index++;
-            selected = Math.abs(sequence[index]) - 1;
-            sign = (sequence[index] > 0) ? 1 : -1;
-         }
-         color[selected] += sign;
-   
-         this._data[pos + 0] = color[0]; //red
-         this._data[pos + 1] = color[1]; //green;
-         this._data[pos + 2] = color[2]; //blue;
-         this._data[pos + 3] = 255;//255 - x;//opacity
+         if(index <= sequence.length) {
+            pos = 4 * x;
+            color[selected] += sign;
+            if(x % 255 == 0) {
+               selected = Math.abs(sequence[index]) - 1;
+               sign = (sequence[index] > 0) ? 1 : -1;
+               index++;
+            }
+            this._data[pos + 0] = color[0]; //red
+            this._data[pos + 1] = color[1]; //green;
+            this._data[pos + 2] = color[2]; //blue;
+            this._data[pos + 3] = 255;//255 - x;//opacity
+         } else {
+            Main.notify("Es: " + x + " de " + maxValue + " " + index)
+            break;
          }
       }
       let pixelFormat = Cogl.PixelFormat.RGBA_8888;// Cogl.PixelFormat.RGB_888;
@@ -612,32 +611,21 @@ GradientSelector.prototype = {
    _init: function(color, style_class) {
       this._container = new St.Bin({ x_fill: true, y_fill: true, x_align: St.Align.START });
       //this._container.style = "padding: 10px 10px; min-width: 200px; min-height: 200px;";
+      this._cursor = new CursorColor(16);   
 
-      this._target = new St.DrawingArea({ style_class: 'popup-slider-menu-item', reactive: true });
-      this._target.style = "min-width: 16px; min-height: 16px;";
-      this._target.set_size(30, 30);
-      this._target.connect('repaint', Lang.bind(this, this._onActorRepaint));
-      /*this._target = new St.Bin({ x_fill: true, y_fill: true, x_align: St.Align.START });
-      this._target.style = "min-width: 16px; min-height: 16px; background-color: rgba(255, 255, 255, 1.0);";
-      this._target.set_size(30, 30);
-      this._drawing = new St.DrawingArea({ style_class: 'popup-slider-menu-item', reactive: true });
-      //this._target.style = "min-width: 16px; min-height: 16px;";
-      this._drawing.connect('repaint', Lang.bind(this, this._onActorRepaint));
-      this._target.set_child(this._drawing);*/
-
-      this.targetX = 0;
-      this.targetY = 0;
+      this._targetX = 0;
+      this._targetY = 0;
       this._currentBox = null;
       this._currentFlags = null;
-      this.paintWhite = false;
+      this._dragging = false;
+      this._motionId = 0;
+      this._releaseId = 0;
 
       if (!style_class)
          style_class = '';
       this.actor = new Cinnamon.GenericContainer({ style_class: style_class, reactive: true });
       this.actor.style = "padding: 10px 10px; min-width: 200px; min-height: 200px;"
       this.actor._delegate = this;
-      this._motionId = 0;
-      this._motionDelayId = 0;
       this._data = new Array(4*256*256);
       this._imageActor = this._getGradientImage();
       this._container.set_child(this._imageActor);
@@ -645,14 +633,12 @@ GradientSelector.prototype = {
       this.setValue(color);
 
       this.actor.add_actor(this._container);
-      this.actor.add_actor(this._target);
+      this.actor.add_actor(this._cursor.actor);
 
       this.actor.connect('get-preferred-width', Lang.bind(this, this._getPreferredWidth));
       this.actor.connect('get-preferred-height', Lang.bind(this, this._getPreferredHeight));
       this.actor.connect('allocate', Lang.bind(this, this._allocate));
       this.actor.connect('button-press-event', Lang.bind(this, this._onButtonPressEvent));
-      this.actor.connect('button-release-event', Lang.bind(this, this._onButtonReleaseEvent));
-     // this.actor.connect('leave-event', Lang.bind(this, this._onLeaveEvent));
    },
 
    _getGradientImage: function() {
@@ -664,38 +650,22 @@ GradientSelector.prototype = {
       imageActor.set_content(coverImage);
       return imageActor;
    },
-/*
-   _reportChange: function() {
-      let colorPos = 4*parseInt(this._value*this._data.length/4);
-      if(colorPos > this._data.length - 4)
-         colorPos = this._data.length - 5;
-      let color = Clutter.Color.new(this._data[colorPos], this._data[colorPos + 1], this._data[colorPos + 2], 255);
-      this.emit('value-changed', color);
-      this.emit('color-change', color);
-      //Scale.prototype._reportChange.call(this);
-   },
-*/
+
    setValue: function(color) {
       if((!this.color)||(this.color.to_string() != color.to_string())) {
          let red, green, blue, pos;
-         for (let y = 0; y < 255; y++) {
-            for (let x = 0; x < 255; x++) {
+         for (let y = 0; y < 256; y++) {
+            redY = color.red + y - y*color.red/255;
+            blueY = color.blue + y - y*color.blue/255;
+            greenY = color.green + y - y*color.green/255;
+            if(redY > 255) redY = 255;
+            if(greenY > 255) greenY = 255;
+            if(blueY > 255) blueY = 255;
+            for (let x = 0; x < 256; x++) {
                pos = 4 *(256 * y + x);
-               red = color.red + y;
-               green = color.green + y;
-               blue = color.blue + y;
-               if(red > 255) red = 255;
-               if(green > 255) green = 255;
-               if(blue > 255) blue = 255;
-               if(red < 0) red = 0;
-               if(green < 0) green = 0;
-               if(blue < 0) blue = 0;
-               red = red - x;
-               green = green - x;
-               blue = blue - x;
-               if(red > 255) red = 255;
-               if(green > 255) green = 255;
-               if(blue > 255) blue = 255;
+               red = redY - x*redY/255;
+               blue = blueY - x*blueY/255;
+               green = greenY - x*greenY/255;
                if(red < 0) red = 0;
                if(green < 0) green = 0;
                if(blue < 0) blue = 0;
@@ -707,7 +677,6 @@ GradientSelector.prototype = {
          }
          this.color = color;
          this._imageActor.content.set_data(this._data, Cogl.PixelFormat.RGBA_8888, 256, 256, 1024);
-         //Main.notify("Color: " + this.color.to_string());
       }
    },
 
@@ -741,161 +710,72 @@ GradientSelector.prototype = {
    },
 
    _onButtonPressEvent: function(actor, event) {
-      if(this._motionId == 0) {
-         this._onMotionEvent();
-         this._motionId = this._imageActor.connect('motion-event', Lang.bind(this, this._onMotionEvent));
-      }
-      return true;
+      if (this._dragging) // don't allow two drags at the same time
+         return;
+
+      this.emit('drag-begin');
+      this._dragging = true;
+
+      // FIXME: we should only grab the specific device that originated
+      // the event, but for some weird reason events are still delivered
+      // outside the slider if using clutter_grab_pointer_for_device
+      Clutter.grab_pointer(this._imageActor);
+      this._releaseId = this._imageActor.connect('button-release-event', Lang.bind(this, this._onButtonReleaseEvent));
+      this._motionId = this._imageActor.connect('motion-event', Lang.bind(this, this._motionEvent));
+      let [absX, absY] = event.get_coords();
+      this._moveHandle(absX, absY);
    },
 
    _onButtonReleaseEvent: function(actor, event) {
-      this._disconnectMotionEvent();
-      return true;
-   },
+      if (this._dragging) {
+         this._imageActor.disconnect(this._releaseId);
+         this._imageActor.disconnect(this._motionId);
 
-   _onLeaveEvent: function(actor, event) {
-      this._disconnectMotionEvent();
-      return true;
-   },
+         Clutter.ungrab_pointer();
+         this._dragging = false;
 
-   _onMotionEvent: function() {
-      this._disconectDelay();
-      let [posX, posY] = this._getlocalPosition(this._container);
-      this._motionDelayId = Mainloop.timeout_add(200, Lang.bind(this, function() {
-      //this._motionDelayId = Mainloop.idle_add(Lang.bind(this, function() {
-         this._disconectDelay();
-         if(this._motionId > 0) {
-            let [posX, posY] = this._getlocalPosition(this._container);
-            this.targetX = posX;
-            this.targetY = posY;
-            this.setAllocation();
-         }
-      }));
-      this.targetX = posX;
-      this.targetY = posY;
-      let color = this._getColorAtPos(posX, posY);
-      let repaint = false;
-      let sum = (color.red + color.green + color.blue);
-      if(sum > 534) {
-         if(this.paintWhite)
-            repaint = true;
-         this.paintWhite = false
-      } else {
-          if(!this.paintWhite)
-            repaint = true;
-         this.paintWhite = true;
+         this.emit('drag-end');
       }
-      if(repaint)
-         this._target.queue_repaint();
-      this.setAllocation();
-      this.emit('color-change', color);
-      //Main.notify("enter " + colorPos + " color " + color.to_string());
+      return true;
    },
 
-   _getlocalPosition: function(actor) {
-      let [mX, mY, mask] = global.get_pointer();
-      let [aX, aY] = actor.get_transformed_position();
-      let [aW, aH] = actor.get_transformed_size();
+   _motionEvent: function(actor, event) {
+      let absX, absY;
+      [absX, absY] = event.get_coords();
+      this._moveHandle(absX, absY);
+      return true;
+   },
+
+   _moveHandle: function(mX, mY) {
+      let [aX, aY] = this._container.get_transformed_position();
+      let [aW, aH] = this._container.get_transformed_size();
       let posX = mX - aX;
       let posY = mY - aY;
-      if((posX < 0)||(posX > aW)||(posY < 0)||(posY > aH)) {
-         this._disconnectMotionEvent();
+      if((posX < 0)||(posX >= aW)||(posY < 0)||(posY >= aH)) {
          if(posX < 0) posX = 0;
          if(posY < 0) posY = 0;
-         if(posX > aW) posX = aW;
-         if(posY > aH) posY = aH
+         if(posX >= aW) posX = aW - 1;
+         if(posY >= aH) posY = aH - 1;
       }
-      return [posX, posY];
-   },
-
-   _disconnectMotionEvent: function() {
-      if(this._motionId > 0) {
-         this._imageActor.disconnect(this._motionId);
-         this._motionId = 0;
-         this._onMotionEvent();
-      }
-   },
-
-   _disconectDelay: function() {
-      if(this._motionDelayId > 0) {
-         Mainloop.source_remove(this._motionDelayId);
-         this._motionDelayId = 0;
-      }
+      this._targetX = posX;
+      this._targetY = posY;
+      let color = this._getColorAtPos(posX, posY);
+      this._cursor.setColor(color);
+      this.actor.queue_relayout();
+      this.emit('color-change', color);
    },
 
    _allocate: function(actor, box, flags) {
       this._container.allocate(box, flags);
       this._currentBox = box;
       this._currentFlags = flags;
-      let [minWidth, minHeight, naturalWidth, naturalHeight] = this._target.get_preferred_size();
+      let [minWidth, minHeight, naturalWidth, naturalHeight] = this._cursor.actor.get_preferred_size();
       let childBox = new Clutter.ActorBox();
-      childBox.x1 = this._currentBox.x1 + this.targetX - naturalWidth/2;
+      childBox.x1 = this._currentBox.x1 + this._targetX - naturalWidth/2;
       childBox.x2 = childBox.x1 + naturalWidth;
-      childBox.y1 = this._currentBox.y1 + this.targetY - naturalHeight/2;
+      childBox.y1 = this._currentBox.y1 + this._targetY - naturalHeight/2;
       childBox.y2 = childBox.y1 + naturalHeight;
-      this._target.allocate(childBox, this._currentFlags);
-   },
-
-   setAllocation: function() {
-      this.actor.queue_relayout();
-   /*   if(this._currentBox) {//get_flags ()
-         let childBox = new Clutter.ActorBox();
-         childBox.x1 = this._currentBox.x1 + this.targetX - this._target.width/2;
-         childBox.x2 = childBox.x1 + this._target.width/2;
-         childBox.y1 = this._currentBox.y1 + this.targetY - this._target.height/2;
-         childBox.y2 = childBox.y1 + this._target.height/2;
-         this._target.allocate(childBox, this._currentFlags);
-      }*/
-   },
-
-   _onActorRepaint: function(area) {
-      //Main.notify("enter");
-      if(!this._currentBox)
-         return false;
-      let cr = area.get_context();
-      let themeNode = area.get_theme_node();
-      let [width, height] = area.get_surface_size();
-      let size = Math.max(width, height)/4;
-      let radius = 3;
-      let color;
-
-     /* let color = themeNode.get_foreground_color();
-      if(!color) {
-         let [res, custtomColor] = Clutter.Color.from_string("#000000");
-         color = custtomColor;
-      }*/
-      let color;
-      if (this.paintWhite) {
-         let [res, selectedColor] = Clutter.Color.from_string("#FFFFFF");
-         color = selectedColor;
-      } else {
-         let [res, selectedColor] = Clutter.Color.from_string("#000000");
-         color = selectedColor;
-      }
-        
-      cr.setLineWidth(3);
-      Clutter.cairo_set_source_color(cr, color);
-
-      cr.lineTo(width/2, height/2 - size);
-      cr.lineTo(width/2, height/2 - radius);
-      cr.stroke();
-
-      cr.lineTo(width/2, height/2 + size);
-      cr.lineTo(width/2, height/2 + radius);
-      cr.stroke();
-
-      cr.lineTo(width/2 - size, height/2);
-      cr.lineTo(width/2 - radius, height/2);
-      cr.stroke();
-
-      cr.lineTo(width/2 + size, height/2);
-      cr.lineTo(width/2 + radius, height/2);
-      cr.stroke();
-
-      cr.arc(width/2, height/2, radius, 0, 2 * Math.PI);
-      cr.stroke();
-      cr.$dispose();
-      return true;
+      this._cursor.actor.allocate(childBox, this._currentFlags);
    },
 
    destroy: function() {
@@ -904,6 +784,163 @@ GradientSelector.prototype = {
    }
 };
 Signals.addSignalMethods(GradientSelector.prototype);
+
+function CursorColor() {
+   this._init.apply(this, arguments);
+}
+
+CursorColor.prototype = {
+   _init: function(size, color, forScreen) {
+      this.actor = new St.DrawingArea({ style_class: 'popup-slider-menu-item', reactive: true });
+      this.actor.style = "min-width: " + size +"px; min-height: " + size + "px;";
+      this.actor.set_size(size, size);
+      this.actor.connect('repaint', Lang.bind(this, this._onCursorRepaint));
+      this._color = color;
+      let [resW, blackColor] = Clutter.Color.from_string("#000000");
+      let [resB, whiteColor] = Clutter.Color.from_string("#FFFFFF");
+      this._whiteColor = whiteColor;
+      this._blackColor = blackColor;
+      if(!this._color) {
+         this._color = whiteColor;
+      }
+      let [cursorColor, borderColor] = this._getCursorColors(this._color);
+      this._cursorColor = cursorColor;
+      this._borderColor = borderColor;
+      this.allocId = 0;
+      this.setForScreen(forScreen);
+   },
+
+   getColor: function() {
+      return this._color;
+   },
+
+   show: function() {
+      this.actor.show();
+   },
+
+   hide: function() {
+      this.actor.hide();
+   },
+
+   setColor: function(color) {
+      if(this._color.to_string() != color.to_string()) {
+         this._color = color;
+         this._updateCursorColor();
+      }
+   },
+
+   setForScreen: function(forScreen) {
+      if(forScreen) {
+         if(this.allocId == 0)
+            this.allocId = this.actor.connect('allocation_changed', Lang.bind(this, this._onAllocationChanged));
+      } else {
+         if(this.allocId > 0) {
+            this.actor.disconnect(this.allocId);
+            this.allocId = 0;
+         }
+      }
+   },
+
+   isForScreen: function() {
+      return (this.allocId != 0);
+   },
+
+   setSize: function(size) {
+      this.actor.set_size(size, size);
+   },
+
+   getSize: function() {
+      return Math.min(this.actor.width, this.actor.height);
+   },
+
+   getColorForScreen: function() {
+      let [mX, mY, mask] = global.get_pointer();
+      let size = this.getSize();
+      let window = Gdk.Screen.get_default().get_root_window();
+      let pixbuf = Gdk.pixbuf_get_from_window(window, mX + size/2, mY + size/2, 1, 1);
+      let data = pixbuf.get_pixels();
+      return Clutter.Color.new(data[0], data[1], data[2], 255);
+   },
+   
+   _getCursorColors: function(color) {
+      let sum = (color.red + color.green + color.blue);
+      if(sum > 534)
+         return [this._whiteColor, this._blackColor];
+      return [this._blackColor, this._whiteColor];
+   },
+
+   _updateCursorColor: function() {
+      let [cursorColor, borderColor] = this._getCursorColors(this._color);
+      this._cursorColor = cursorColor;
+      this._borderColor = borderColor;
+      this.actor.queue_repaint();
+   },
+
+   _onAllocationChanged: function() {
+      let color = this.getColorForScreen();
+      if(this._color.to_string() != color.to_string()) {
+         this._color = color;
+         this._updateCursorColor();
+      }
+   },
+
+   _onCursorRepaint: function(area) {
+      let cr = area.get_context();
+      let themeNode = area.get_theme_node();
+      let [width, height] = area.get_surface_size();
+      let size = Math.min(width, height);
+      let middle = size/2;
+      let radius = 3;
+        
+      cr.setLineWidth(3);
+      Clutter.cairo_set_source_color(cr, this._cursorColor);
+      cr.lineTo(middle, 0);
+      cr.lineTo(middle, middle - radius);
+      cr.stroke();
+      cr.lineTo(middle, size);
+      cr.lineTo(middle, middle + radius);
+      cr.stroke();
+      cr.lineTo(0, middle);
+      cr.lineTo(middle - radius, middle);
+      cr.stroke();
+      cr.lineTo(size, middle);
+      cr.lineTo(middle + radius, middle);
+      cr.stroke();
+
+
+      cr.setLineWidth(2);
+      Clutter.cairo_set_source_color(cr, this._borderColor);
+      cr.lineTo(middle, 0);
+      cr.lineTo(middle, middle - radius);
+      cr.stroke();
+      cr.lineTo(middle, size);
+      cr.lineTo(middle, middle + radius);
+      cr.stroke();
+      cr.lineTo(0, middle);
+      cr.lineTo(middle - radius, middle);
+      cr.stroke();
+      cr.lineTo(size, middle);
+      cr.lineTo(middle + radius, middle);
+      cr.stroke();
+
+      cr.setLineWidth(2);
+      cr.arc(middle, middle, radius + 1, 0, 2 * Math.PI);
+      cr.stroke();
+
+      cr.setLineWidth(radius);
+      Clutter.cairo_set_source_color(cr, this._color);
+      cr.arc(middle, middle, 1, 0, 2 * Math.PI);
+      cr.stroke();
+
+      cr.$dispose();
+      return true;
+   },
+
+   destroy: function() {
+      this.actor.destroy();
+   }
+};
+Signals.addSignalMethods(CursorColor.prototype);
 
 function EyeDropper() {
    this._init.apply(this, arguments);
@@ -915,6 +952,9 @@ EyeDropper.prototype = {
          this.menu = this._findTopMenu(colorChooser);
          this._realSourceContains = null;
          this._callback = callback;
+         let [res, selectedColor] = Clutter.Color.from_string("#FFFFFF");
+         this._cursor = new CursorColor(16, selectedColor, true);
+         this._xfixesCursor = Cinnamon.XFixesCursor.get_for_stage(global.stage);
          this.stageEventIds = new Array();
          this.stageEventIds.push(global.stage.connect("captured-event", Lang.bind(this, this.onStageEvent)));
          this.stageEventIds.push(global.stage.connect("enter-event", Lang.bind(this, this.onStageEvent)));
@@ -927,22 +967,8 @@ EyeDropper.prototype = {
          let constraint = new Clutter.BindConstraint({ source: global.stage,
                                                        coordinate: Clutter.BindCoordinate.POSITION | Clutter.BindCoordinate.SIZE });
          this.actor.add_constraint(constraint);
+         this.actor.add_actor(this._cursor.actor);
 
-         this._backgroundBin = new St.Bin();
-         this.actor.add_actor(this._backgroundBin);
-
-         let monitor = Main.layoutManager.focusMonitor;
-         this._backgroundBin.set_position(monitor.x, monitor.y);
-         this._backgroundBin.set_size(monitor.width, monitor.height);
-
-         let stack = new Cinnamon.Stack();
-         this._backgroundBin.child = stack;
-
-         this.eventBlocker = new Clutter.Group({ reactive: true });
-         stack.add_actor(this.eventBlocker);
-
-         this.groupContent = new St.Bin();
-         stack.add_actor(this.groupContent);
          Mainloop.idle_add(Lang.bind(this, this.show));
       } catch(e) {
          Main.notify("Error:", e.message);
@@ -955,12 +981,9 @@ EyeDropper.prototype = {
          this._realSourceContains = this.menu.sourceActor.contains;
          this.menu.sourceActor.contains = function() { return true; }
          DND.currentDraggable = global.stage.key_focus;
-         this._realButtonPress = Clutter.EventType.BUTTON_PRESS;
-         this._realButtonRelease = Clutter.EventType.BUTTON_RELEASE;
-         Clutter.EventType.BUTTON_PRESS = -1;
-         Clutter.EventType.BUTTON_RELEASE = -1;
       }
       global.set_stage_input_mode(Cinnamon.StageInputMode.FULLSCREEN);
+      this._xfixesCursor.hide();
       this.actor.show();
    },
 
@@ -973,6 +996,12 @@ EyeDropper.prototype = {
       }
       return null;
    },
+
+   _moveHandle: function(mX, mY) {
+      this._cursor.actor.x = mX;
+      this._cursor.actor.y = mY;
+      this._cursor.actor.queue_relayout();
+   },
     
    onStageEvent: function(actor, event) {
       try {
@@ -980,14 +1009,18 @@ EyeDropper.prototype = {
             let type = event.type();
             if((type == Clutter.EventType.KEY_PRESS) || (type == Clutter.EventType.KEY_RELEASE)) {
                if(event.get_key_symbol() == Clutter.Escape) {
-                  this.destroy();
+                  this._pickedColor();
                   return true;
                }
                return false;
             }
-            if(type == this._realButtonRelease) {
-               this.destroy();
+            if(type == Clutter.EventType.BUTTON_RELEASE) {
+               this._pickedColor();
                return true;
+            }
+            if(type == Clutter.EventType.MOTION) {
+               let [absX, absY] = event.get_coords();
+               this._moveHandle(absX, absY);
             }
          }
          return true;
@@ -999,6 +1032,13 @@ EyeDropper.prototype = {
       return true;
    },
 
+   _pickedColor: function() {
+      let color = this._cursor.getColorForScreen();
+      this._callback(color);
+      this.emit("picked-color", color);
+      this.destroy();
+   },
+
    destroy: function() {
       for(let i = 0; i < this.stageEventIds.length; i++)
          global.stage.disconnect(this.stageEventIds[i]);
@@ -1006,8 +1046,6 @@ EyeDropper.prototype = {
       Main.uiGroup.remove_actor(this.actor);
       this.actor.destroy();
 
-      Clutter.EventType.BUTTON_PRESS = this._realButtonPress;
-      Clutter.EventType.BUTTON_RELEASE = this._realButtonRelease;
       global.set_stage_input_mode(Cinnamon.StageInputMode.NORMAL);
       if((this.menu) && (this.menu.sourceActor)) {
          global.stage.set_key_focus(this.menu.actor);
@@ -1015,8 +1053,8 @@ EyeDropper.prototype = {
          DND.currentDraggable = null;
          global.set_stage_input_mode(Cinnamon.StageInputMode.FULLSCREEN);
       }
-      this._callback(global.get_pointer());
-      this.emit("destroy", global.get_pointer());
+      this._xfixesCursor.show();
+      this.emit("destroy");
    }
 };
 Signals.addSignalMethods(EyeDropper.prototype);
