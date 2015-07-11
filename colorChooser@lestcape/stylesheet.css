@@ -1,0 +1,43 @@
+.color-inspector {
+    padding: 10px 10px;
+}
+
+.color-entry {
+    width: -1px;
+    font-family: monospace;
+}
+
+.color-entry {
+    spacing: .5em;
+}
+
+.color-spectrum {
+    min-width: 14px;
+    min-height: 100px;
+}
+
+.color-gradient {
+    padding: 10px 10px;
+    min-width: 100px;
+    min-height: 100px;
+}
+
+.color-cursor {
+    width: 16px;
+    height: 16px;
+}
+
+.button-label {
+    min-width: 8px;
+    height: 4px;
+}
+
+.button-icon {
+    padding: 0px 0px;
+    border-radius: 6px;
+}
+
+.button-icon-box {
+    padding: 10px 10px;
+}
+

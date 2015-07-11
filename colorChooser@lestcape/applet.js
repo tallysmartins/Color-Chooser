@@ -21,6 +21,7 @@ const Applet = imports.ui.applet;
 const PopupMenu = imports.ui.popupMenu;
 const Main = imports.ui.main;
 const Gtk = imports.gi.Gtk;
+const Clutter = imports.gi.Clutter;
 
 const AppletPath = imports.ui.appletManager.applets['colorChooser@lestcape'];
 const ColorChooser = AppletPath.colorChooser;
@@ -52,8 +53,8 @@ MyApplet.prototype = {
     buildChoser: function() {
         let section = new PopupMenu.PopupMenuSection();
         this.menu.addMenuItem(section);
-
-        this.chooser = new ColorChooser.ColorChooser(this.menu);
+        let [res, color] = Clutter.Color.from_string("#FF0000FF");
+        this.chooser = new ColorChooser.ColorChooser(color);
         section.actor.add(this.chooser.actor, {x_fill: true, y_fill: true, y_align: St.Align.START, expand: true});
     }, 
 

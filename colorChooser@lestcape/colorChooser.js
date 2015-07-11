@@ -38,66 +38,84 @@ function ColorChooser() {
 }
 
 ColorChooser.prototype = {
-   _init: function(menu) {
+   _init: function(color) {
       try {
-         this.menu = menu;
-         let [res, color] = Clutter.Color.from_string("#FF000000");
-         this.selectedColor = color;
+         if(!color) {
+            let [res, colorInit] = Clutter.Color.from_string("#FF0000FF");
+            color = colorInit;
+         }
 
-         this.spectrum = new ScaleSpectrum(this.selectedColor, [2, -1, 3, -2, 1, -3]);
-         this.spectrum.connect('color-change', Lang.bind(this, this._onSpectrumColorChange));
-         this.gradient = new GradientSelector(this.selectedColor);
-         this.gradient.connect('color-change', Lang.bind(this, this._onGradientColorChange));
+         this.spectrum = new ScaleSpectrum(color, [2, -1, 3, -2, 1, -3]);
+         this.gradient = new GradientSelector(color);
+         this.opacity = new Slider(color.alpha);
+         this.hint = new ColorButton(color, 100, 28);
+         this.palette = new ColorPalette();
+         this.savePalette = new ColorPalette();
+         this.pickerIcon = new IconButton(48, 48, 'color-chooser', St.IconType.FULLCOLOR);
+         this.hintSave = new IconButton(48, 48, 'gtk-yes', St.IconType.FULLCOLOR);
 
-         this.opacitySlider = new Slider(0);
+         this.actor = new St.BoxLayout({ vertical: true });
+         this.topActor = new St.BoxLayout({ vertical: false });
+         this.bottomActor = new St.BoxLayout({ vertical: false });
 
-         this.actor = new St.BoxLayout({ vertical: false });
-
-         this.pickerActor = new St.BoxLayout({ vertical: false });
+         this.colorActor = new St.BoxLayout({ vertical: false });
          this.selectionActor = new St.BoxLayout({ vertical: true });
-         this.colorPicker = new St.BoxLayout({ vertical: true });
+         this.inspectorActor = new St.BoxLayout({ style_class: 'color-inspector', vertical: false });
+         this.opacityActor = new St.BoxLayout({ vertical: false });
+         this.saveActor = new St.BoxLayout({ vertical: false });
+         this.entryColor = new St.Entry({ name: 'menu-search-entry', hint_text: _("Type a color..."), track_hover: true, can_focus: true });
 
+         this.setSize(500, 300); // x = 380 300
+         this.entryColor.style = "width: -1px; font-family: monospace;";//color-entry
+         this.opacity.actor.style = "padding-right: 10px;";
+         this.savePalette.actor.style = "padding: 10px 10px;";
+         //this.hintSave.actor.style = "padding-right: 10px;";
+         this.hint.actor.style = "padding-right: 10px;"
 
-         this.inspectorActor = new St.BoxLayout({ vertical: false });
-         this.hintColor = new St.Bin({ reactive: true });
-         this.hintColor.connect('button-release-event', Lang.bind(this, this._executePicker));
+         this.actor.add(this.topActor, {x_fill: true, y_fill: true, x_align: St.Align.START, y_align: St.Align.START, expand: true });
+         this.actor.add(this.bottomActor);
 
-         this.hintColor.style = "min-width: 50px; border: 1px solid rgba(0,0,0,0.1); border-radius: 6px; background-color: rgba(0, 0, 0, 1.0);";
-         this.inspectorActor.style = "padding: 10px 10px;";
-         this.entryColor = new St.Entry({
-            name: 'menu-search-entry',
-            //name: 'color-chooser-entry',
-            hint_text: _("Type to search..."),
-            track_hover: true,
-            can_focus: true
-         });
-         this.entryColor.width = 100;
-         this.actor.add(this.pickerActor, {x_fill: true, y_fill: true, x_align: St.Align.START, y_align: St.Align.START, expand: true });
-         this.actor.add(this.selectionActor);
+         this.topActor.add(this.colorActor, {x_fill: true, y_fill: true, x_align: St.Align.START, y_align: St.Align.START, expand: true });
+         this.topActor.add(this.selectionActor);
+
+         this.bottomActor.add(this.opacityActor, {x_fill: true, y_fill: true, x_align: St.Align.START, y_align: St.Align.START, expand: true });
+         this.bottomActor.add(this.saveActor);
+
+         this.opacityActor.add(this.pickerIcon.actor);
+         this.opacityActor.add(this.opacity.actor, {x_fill: true, y_fill: false, x_align: St.Align.START, y_align: St.Align.MIDDLE, expand: true });
+
+         this.saveActor.add(this.savePalette.actor, {x_fill: true, y_fill: false, x_align: St.Align.END, y_align: St.Align.MIDDLE });
+         this.saveActor.add(this.hintSave.actor, {x_fill: true, y_fill: false, x_align: St.Align.END, y_align: St.Align.MIDDLE });
 
          this.selectionActor.add(this.inspectorActor);
+         this.selectionActor.add(this.palette.actor);
+
+         this.inspectorActor.add(this.hint.actor);
+         this.inspectorActor.add(this.entryColor, {x_fill: true, y_fill: false, x_align: St.Align.END, y_align: St.Align.MIDDLE, expand: true })
+
+         this.colorActor.add(this.spectrum.actor);
+         this.colorActor.add(this.gradient.actor, {x_fill: true, y_fill: true, x_align: St.Align.START, y_align: St.Align.START, expand: true });
+
+         this.actor._delegate = this;
          global.stage.set_key_focus(this.entryColor);
-         this.inspectorActor.add(this.hintColor);
-         this.inspectorActor.add(this.entryColor);
+         this.palette.loadDefault();
+         this.savePalette.loadFromString("#00000000,#00000000,#00000000,#00000000,#00000000,#00000000")
+         this._updateColor(color);
 
-         this.pickerActor.add(this.spectrum.actor);
-         this.pickerActor.add(this.colorPicker, {x_fill: true, y_fill: true, x_align: St.Align.START, y_align: St.Align.START, expand: true });
-
-         this.colorPicker.add(this.gradient.actor, {x_fill: true, y_fill: true, x_align: St.Align.START, y_align: St.Align.START, expand: true });
-         this.colorPicker.add(this.opacitySlider.actor);
-
-         this.setSize(500, 300);
+         this.spectrum.connect('value-changed', Lang.bind(this, this._onSpectrumColorChange));
+         this.gradient.connect('selected-color-changed', Lang.bind(this, this._onGradientColorChange));
+         this.opacity.connect('value-changed', Lang.bind(this, this._onOpacityColorChange));
+         this.palette.connect('select-color', Lang.bind(this, this._onSelectedColorChange));
+         //this.entryColor.clutter_text.connect('text-changed', Lang.bind(this, this._onColorTextChanged));
+         this.entryColor.clutter_text.connect('key-press-event', Lang.bind(this, this._onColorTextChanged));
+         this.pickerIcon.button.connect('button-release-event', Lang.bind(this, this._executePicker));
       } catch (e) {
          Main.notify("Err2 " + e.message);
       }
    },
 
    _executePicker: function() {
-      let dropper = new EyeDropper(this, Lang.bind(this, this._onPickerColor));
-   },
-
-   _onPickerColor: function(color) {
-      this.setCurrentColor(color);
+      let dropper = new EyeDropper(this, Lang.bind(this, this._onSelectedColorChange));
    },
 
    setSize: function(width, height) {
@@ -105,19 +123,57 @@ ColorChooser.prototype = {
    },
 
    setCurrentColor: function(color) {
-      this.entryColor.set_text(color.to_string());
-      //this.hintColor.set_background_color(color);
-      this.hintColor.style = "min-width: 50px; border: 1px solid rgba(0,0,0,0.1); border-radius: 6px; background-color: rgba(" + 
-         color.red + "," + color.green + "," + color.blue + "," + color.alpha + ");";
+      if(this.selectedColor != color) {
+         this.spectrum.setValue(color);
+         this.gradient.setGradientColor(this.spectrum.value);
+         this.gradient.selectTargetColor(color);
+         this._updateColor(color);
+      }
+   },
+
+   _updateColor: function(color) {
+      if(this.selectedColor != color) {
+         this.selectedColor = color;
+         let opacityValue = 255*this.opacity.value;
+         if(opacityValue != color.alpha)
+            color.alpha = opacityValue;
+         this.entryColor.set_text(color.to_string().toUpperCase());
+         this.hint.setValue(color);
+         this.emit('value-changed', color);
+      }
+   },
+
+   _onOpacityColorChange: function(opacity, value) {
+      //Main.notify("Value " + value)
+      let opacityValue = 255*this.opacity.value;
+      if(opacityValue != this.selectedColor.alpha) {
+         let [res, color] = Clutter.Color.from_string(this.selectedColor.to_string());
+         color.alpha = opacityValue;
+         this._updateColor(color);
+      }
+   },
+
+   _onColorTextChanged: function(actor, event) {
+      let symbol = event.get_key_symbol();
+      if(symbol == Clutter.Return || symbol == Clutter.KP_Enter) {
+         let colorText = this.entryColor.get_text();
+         let [res, color] = Clutter.Color.from_string(colorText);
+         if((res)&&(!color.equal(this.selectedColor))) {
+            this.setCurrentColor(color);
+         }
+      }
+   },
+
+   _onSelectedColorChange: function(actor, color) {
+      this.setCurrentColor(color)
    },
 
    _onSpectrumColorChange: function(spectrum, color) {
-      this.gradient.setValue(color);
+      this.gradient.setGradientColor(color);
    },
 
    _onGradientColorChange: function(gradient, color) {
-      this.setCurrentColor(color);
-      this.emit('color-change', color);
+      this._updateColor(color);
    },
 
    destroy: function() {
@@ -138,13 +194,13 @@ Slider.prototype = {
       this.actor = new St.Bin({ x_fill: true, y_fill: true, x_align: St.Align.START, reactive: true });
       this.actor.connect('key-press-event', Lang.bind(this, this._onKeyPressEvent));
 
-      this._value = null;
-      this.setValue(value);
+      if (isNaN(value))
+         value = 0;
+      this._value = Math.max(Math.min(value, 1), 0);
 
       this.vertical = (vertical == true);
 
       this._slider = new St.DrawingArea({ style_class: 'popup-slider-menu-item', reactive: true });
-      this._slider.style = "min-width: 16px; min-height: 16px;";
       this._slider.set_size(-1, -1);
       this.actor.set_child(this._slider);
       this._slider.connect('repaint', Lang.bind(this, this._onActorRepaint));
@@ -156,12 +212,14 @@ Slider.prototype = {
    },
 
    setValue: function(value) {
-      let repaint = this._value != null;
       if (isNaN(value))
           value = 0;
-      this._value = Math.max(Math.min(value, 1), 0);
-      if(repaint)
-          this._slider.queue_repaint();
+      value = Math.max(Math.min(value, 1), 0); 
+      if(this._value != value) {
+         this._value = value;
+         this._slider.queue_repaint();
+         this._reportChange();
+      }
    },
 
    _onActorRepaint: function(area) {
@@ -430,17 +488,13 @@ function ScaleSpectrum() {
 ScaleSpectrum.prototype = {
    __proto__: Scale.prototype,
 
-   _init: function(initColor, sequence, style_class) {
+   _init: function(initColor, sequence) {
       Scale.prototype._init.call(this, 0, true);
 
       this._scale = this.actor;
-      if (!style_class)
-         style_class = '';
-      this.actor = new Cinnamon.GenericContainer({ style_class: style_class, reactive: true });
+      this.actor = new Cinnamon.GenericContainer({ reactive: true });
       this.actor._delegate = this;
-      this._motionId = 0;
-      this._container = new St.Bin({ x_fill: true, y_fill: true, x_align: St.Align.START });
-      this._container.style = "min-width: 20px; min-height: 200px;";
+      this._container = new St.Bin({ style_class: 'color-spectrum', x_fill: true, y_fill: true, x_align: St.Align.START });
       this._data = new Array(4*(sequence.length*255 + 1));
       this._imageActor = this._getSpectrumImage();
       this._generateSpectrum(initColor, sequence);
@@ -453,18 +507,10 @@ ScaleSpectrum.prototype = {
       this.actor.connect('get-preferred-width', Lang.bind(this, this._getPreferredWidth));
       this.actor.connect('get-preferred-height', Lang.bind(this, this._getPreferredHeight));
       this.actor.connect('allocate', Lang.bind(this, this._allocate));
-      this.actor.connect('button-press-event', Lang.bind(this, this._onButtonPressEvent));
-      this.actor.connect('button-release-event', Lang.bind(this, this._onButtonReleaseEvent));
    },
 
    _reportChange: function() {
-      let colorPos = 4*parseInt(this._value*this._data.length/4);
-      if(colorPos > this._data.length - 4)
-         colorPos = this._data.length - 4;
-      let color = Clutter.Color.new(this._data[colorPos], this._data[colorPos + 1], this._data[colorPos + 2], 255);
-      this.emit('value-changed', color);
-      this.emit('color-change', color);
-      //Scale.prototype._reportChange.call(this);
+      this.emit('value-changed', this.value);
    },
 
    _getSpectrumImage: function() {
@@ -477,26 +523,19 @@ ScaleSpectrum.prototype = {
       return imageActor;
    },
 
+   get value() {
+      let colorPos = 4*parseInt(this._value*this._data.length/4);
+      if(colorPos > this._data.length - 4)
+         colorPos = this._data.length - 4;
+      let color = Clutter.Color.new(this._data[colorPos], this._data[colorPos + 1], this._data[colorPos + 2], 255);
+      return color;
+   },
+
    setValue: function(color) {
-      let repaint = this._value != null;
-      if (isNaN(color))
-         color = Clutter.Color.new(this._data[0], this._data[1], this._data[2], 255);
-      this._value = this._findValueForColor(color);
-      if(repaint) {
-         this._slider.queue_repaint();
-         //this.emit('color-change', color);
-      }
-   },
-
-   _findValueForColor: function(color) {
-      //color = Clutter.Color.new(this._data[0], this._data[1], this._data[2], 255);
-      return 0;
-   },
-
-   _disconnectMotionEvent: function() {
-      if(this._motionId > 0) {
-         this._imageActor.disconnect(this._motionId);
-         this._motionId = 0;
+      let [hue, luminance, saturation] = color.to_hls();
+      let value = (hue/360);
+      if((value != -1)&&(this._value != value)) {
+         Scale.prototype.setValue.call(this, value);
       }
    },
 
@@ -534,21 +573,6 @@ ScaleSpectrum.prototype = {
       //this._imageActor.content.set_data(pixbuf.get_pixels(), pixelFormat, 1, maxValue, rowstride);
    },
 
-   _onMotionEvent: function() {
-      let [mX, mY, mask] = global.get_pointer();
-      let [aX, aY] = this.actor.get_transformed_position();
-      let [aW, aH] = this.actor.get_transformed_size();
-      let pos = mY - aY;
-      if(pos >= 0) {
-         let colorPos = pos/aH;
-         if(colorPos > 1)
-             colorPos = 1;
-         this._value = colorPos;
-         this._reportChange();
-      } else
-        Main.notify("my: " + mY + " ay: " + aY);
-   },
-
    _getPreferredWidth: function(actor, forHeight, alloc) {
       let [cMin, cNatural] = this._container.get_preferred_width(-1);
       let [sMin, sNatural] = this._scale.get_preferred_width(-1);
@@ -563,17 +587,6 @@ ScaleSpectrum.prototype = {
       let [sMin, sNatural] = this._scale.get_preferred_height(sChildWidth);
       let height = cNatural + sNatural;
       alloc.min_size = alloc.natural_size = height;
-   },
-
-   _onButtonPressEvent: function(actor, event) {
-      if(this._motionId == 0)
-         this._motionId = this._imageActor.connect('motion-event', Lang.bind(this, this._onMotionEvent));
-      return true;
-   },
-
-   _onButtonReleaseEvent: function(actor, event) {
-      this._disconnectMotionEvent();
-      return true;
    },
 
    _allocate: function(actor, box, flags) {
@@ -608,9 +621,9 @@ function GradientSelector() {
 
 GradientSelector.prototype = {
 
-   _init: function(color, style_class) {
+   _init: function(color) {
+      this.actor = new Cinnamon.GenericContainer({ style_class: 'color-gradient', reactive: true });
       this._container = new St.Bin({ x_fill: true, y_fill: true, x_align: St.Align.START });
-      //this._container.style = "padding: 10px 10px; min-width: 200px; min-height: 200px;";
       this._cursor = new CursorColor(16);   
 
       this._targetX = 0;
@@ -620,17 +633,18 @@ GradientSelector.prototype = {
       this._dragging = false;
       this._motionId = 0;
       this._releaseId = 0;
+      this._isInUpdate = false;
+      this._updateIsNeeded = false;
+      this.color = null;
+      this.selectedColor = null;
 
-      if (!style_class)
-         style_class = '';
-      this.actor = new Cinnamon.GenericContainer({ style_class: style_class, reactive: true });
-      this.actor.style = "padding: 10px 10px; min-width: 200px; min-height: 200px;"
       this.actor._delegate = this;
       this._data = new Array(4*256*256);
       this._imageActor = this._getGradientImage();
       this._container.set_child(this._imageActor);
       this._imageActor.set_reactive(true);
-      this.setValue(color);
+      this.setGradientColor(color);
+      this.selectTargetColor(color);
 
       this.actor.add_actor(this._container);
       this.actor.add_actor(this._cursor.actor);
@@ -651,38 +665,136 @@ GradientSelector.prototype = {
       return imageActor;
    },
 
-   setValue: function(color) {
-      if((!this.color)||(this.color.to_string() != color.to_string())) {
-         let red, green, blue, pos;
-         for (let y = 0; y < 256; y++) {
-            redY = color.red + y - y*color.red/255;
-            blueY = color.blue + y - y*color.blue/255;
-            greenY = color.green + y - y*color.green/255;
-            if(redY > 255) redY = 255;
-            if(greenY > 255) greenY = 255;
-            if(blueY > 255) blueY = 255;
-            for (let x = 0; x < 256; x++) {
-               pos = 4 *(256 * y + x);
-               red = redY - x*redY/255;
-               blue = blueY - x*blueY/255;
-               green = greenY - x*greenY/255;
-               if(red < 0) red = 0;
-               if(green < 0) green = 0;
-               if(blue < 0) blue = 0;
-               this._data[pos + 0] = red;//red
-               this._data[pos + 1] = green;
-               this._data[pos + 2] = blue;//blue
-               this._data[pos + 3] = 255;//255 - x;//opacity
-            }
-         }
+   setGradientColor: function(color) {
+      if((!this.color)||(!this.color.equal(color))) {
          this.color = color;
+         this._updateColor(color);
          this._imageActor.content.set_data(this._data, Cogl.PixelFormat.RGBA_8888, 256, 256, 1024);
+         this._setHandle(this._targetX, this._targetY);
+         this.emit('gradient-color-changed', color);
       }
    },
 
-   _findValueForColor: function(color) {
-      //color = Clutter.Color.new(this._data[0], this._data[1], this._data[2], 255);
-      return 0;
+   selectTargetColor: function(color) {
+     if((!this.selectedColor)||(!this.selectedColor.equal(color))) {
+         this.selectedColor = color;
+         let pos = this._findColorPos(color);
+         if(pos == -1)
+            pos = this._estimateColorPos(this.selectedColor, color);
+         //Main.notify("Found " + pos1 + " real " + pos);
+         if(pos != -1) {
+            let x = (pos/4)%256;
+            let y = pos/(4*256);
+            let [aW, aH] = this._container.get_transformed_size();
+            let xPos = (aW*x/256);
+            let yPos = (aH*y/256);
+            this._setHandle(xPos, yPos);
+         } else  {
+            Main.notify("Fail to found position");
+         }
+      }
+   },
+
+   setTargetColorWithGradient: function(gradientColor, color) {
+      this.setGradientColor(gradientColor);
+      this.selectTargetColor(color);
+   },
+
+   // FIXME: This is a replacement for _findColorPos
+   // as can fail and this not iterates over all colors.
+   // We can find a color position if we resolve a not 
+   // linear system equation, but with more equation than
+   // variables. Then how to find a good approximation 
+   // for the indeterminate system equation?
+   _estimateColorPos: function(sColor, color) {
+      let positions = [];
+      positions.push(this._findForColor(sColor.red, sColor.blue, color.red, color.blue));
+      positions.push(this._findForColor(sColor.red, sColor.green, color.red, color.green));
+      positions.push(this._findForColor(sColor.blue, sColor.green, color.blue, color.green));
+      let posX = 0;
+      let posY = 0;
+      let count = 0;
+      for(pos in positions) {
+         if(positions[pos]) {
+            posX += positions[pos][0];
+            posY += positions[pos][1];
+            count++
+         }
+      }
+      if(count > 0)
+         return 4 *(256 * posY + posX)/count;
+      return -1;
+   },
+
+   _findForColor: function(sColor1, sColor2, color1, color2) {
+      let d = color1*(255 - sColor2) - color2*(255 - sColor1);
+      let x = -1;
+      if(d > 0) {
+         let y = Math.round(255*(color2*sColor1 - color1*sColor2)/d);
+         if(y > 0) {
+            if(color1 > 0)
+               x = Math.round(255*(1 - 255*color1/(255*sColor1 + y*(255 - sColor1))));
+            else
+               x = Math.round(255*(1 - 255*color2/(255*sColor2 + y*(255 - sColor2))));
+            if(x >= 0)
+               return [x, y];
+         }
+      }
+      return null;
+   },
+
+   _findColorPos: function(color) {
+     let pos;
+     for (let y = 0; y < 256; y++) {
+         for (let x = 0; x < 256; x++) {
+            pos = 4 *(256 * y + x);
+            if((color.red == this._data[pos]) &&
+               (color.green == this._data[pos + 1]) &&
+               (color.blue == this._data[pos + 2])) {
+               //Main.notify("ff pos: " + x + " " + y)
+               return pos;
+            }
+         }
+      }
+      return -1;
+   },
+
+   _updateColor: function(color) {
+      if(!this._isInUpdate) {
+         this._isInUpdate = true;
+         let red, green, blue, redY, blueY, greenY, pos;
+         for (let y = 0; y < 256; y++) {
+            redY = color.red + y - y*color.red/255;
+            greenY = color.green + y - y*color.green/255;
+            blueY = color.blue + y - y*color.blue/255;
+            for (let x = 0; x < 256; x++) {
+               red = redY - x*redY/255;
+               green = greenY - x*greenY/255;
+               blue = blueY - x*blueY/255;
+               pos = 4 *(256 * y + x);
+               this._data[pos + 0] = Math.round(red);//red
+               this._data[pos + 1] = Math.round(green);
+               this._data[pos + 2] = Math.round(blue);//blue
+               this._data[pos + 3] = 255;//255 - x;//opacity
+               /*if(pos == 0) {
+                   Main.notify("found:" + this._data[pos + 0] + " " + this._data[pos + 1] + " " + this._data[pos + 2])
+                   Main.notify("color:" + color.red + " " + color.green + " " + color.blue)
+               }
+               if((this.selectedColor)&&(this.selectedColor.red == this._data[pos]) &&
+                  (this.selectedColor.green == this._data[pos + 1]) &&
+                  (this.selectedColor.blue == this._data[pos + 2])) {
+                  Main.notify("is there")
+               }*/
+            }
+         }
+         if(this._updateIsNeeded) {
+            this._updateIsNeed = false;
+            this._updateColor(this.color);
+         }
+         this._isInUpdate = false;
+      } else {
+         this._updateIsNeeded = true;
+      }
    },
 
    setSize: function(width, height) {
@@ -757,12 +869,19 @@ GradientSelector.prototype = {
          if(posX >= aW) posX = aW - 1;
          if(posY >= aH) posY = aH - 1;
       }
+      this._setHandle(posX, posY);
+   },
+
+   _setHandle: function(posX, posY) {
       this._targetX = posX;
       this._targetY = posY;
       let color = this._getColorAtPos(posX, posY);
-      this._cursor.setColor(color);
-      this.actor.queue_relayout();
-      this.emit('color-change', color);
+      if((!this.selectedColor) || (color != this.selectedColor)) {
+         this.selectedColor = color;
+         this._cursor.setColor(color);
+         this.actor.queue_relayout();
+         this.emit('selected-color-changed', color);
+      }
    },
 
    _allocate: function(actor, box, flags) {
@@ -792,7 +911,7 @@ function CursorColor() {
 CursorColor.prototype = {
    _init: function(size, color, forScreen) {
       this.actor = new St.DrawingArea({ style_class: 'popup-slider-menu-item', reactive: true });
-      this.actor.style = "min-width: " + size +"px; min-height: " + size + "px;";
+      this.actor.add_style_class_name('color-cursor');
       this.actor.set_size(size, size);
       this.actor.connect('repaint', Lang.bind(this, this._onCursorRepaint));
       this._color = color;
@@ -823,7 +942,7 @@ CursorColor.prototype = {
    },
 
    setColor: function(color) {
-      if(this._color.to_string() != color.to_string()) {
+      if(!this._color.equal(color)) {
          this._color = color;
          this._updateCursorColor();
       }
@@ -878,7 +997,7 @@ CursorColor.prototype = {
 
    _onAllocationChanged: function() {
       let color = this.getColorForScreen();
-      if(this._color.to_string() != color.to_string()) {
+      if(!this._color.equal(color)) {
          this._color = color;
          this._updateCursorColor();
       }
@@ -1034,7 +1153,7 @@ EyeDropper.prototype = {
 
    _pickedColor: function() {
       let color = this._cursor.getColorForScreen();
-      this._callback(color);
+      this._callback(this, color);
       this.emit("picked-color", color);
       this.destroy();
    },
@@ -1058,3 +1177,218 @@ EyeDropper.prototype = {
    }
 };
 Signals.addSignalMethods(EyeDropper.prototype);
+
+function Button() {
+   this._init.apply(this, arguments);
+}
+
+Button.prototype = {
+   _init: function(label, width, height) {
+      this.actor = new St.Button({
+         style_class: 'modal-dialog-button',
+         reactive:    true,
+         can_focus:   true,
+         label:       label
+      });
+      this.actor.add_style_class_name('button-label');
+      this._label = label;
+      this.button = this.actor;
+      this.actor._delegate = this;
+      this.actor.set_size(width, height);
+   },
+
+   setSize: function(width, height) {
+      this.actor.set_size(width, height);
+   },
+};
+
+function IconButton() {
+   this._init.apply(this, arguments);
+}
+//spacing: 21px;margin-left: 10px;
+IconButton.prototype = {
+   __proto__: Button.prototype,
+
+   _init: function(width, height, iconName, iconType) {
+      Button.prototype._init.call(this, "", width, height);
+      this.actor = new St.Bin({ reactive: true });
+      this.actor.set_child(this.button);
+      /*if(!iconName)
+         iconName = "";*/
+      if(!iconType)
+         iconType = St.IconType.FULLCOLOR;
+      this.icon = new St.Icon({ icon_name: iconName, icon_type: iconType });
+
+      //this.button.add_style_class_name('button-icon');
+      this.button.style = "padding: 0px 0px; border-radius: 6px;";
+      this.actor.style = "padding: 10px 10px;";
+      //this.actor.set_style_class_name('button-icon-box');
+      this.button.set_child(this.icon);
+      this.actor.set_size(width, height);
+      this.icon.set_icon_size(20);
+   },
+};
+
+function ColorButton() {
+   this._init.apply(this, arguments);
+}
+
+ColorButton.prototype = {
+   __proto__: IconButton.prototype,
+
+   _init: function(color, width, height) {
+      IconButton.prototype._init.call(this, width, height, "");
+      this.actor.style = "padding: 0px 0px;";
+      //this.actor = new St.BoxLayout({ vertical: true, reactive: true });
+      this._hintColor = new St.Bin();
+      this.button.style = "padding: 2px 2px; border-radius: 6px;";
+      //this._hintColor.style = "border-radius: 12px;";
+      this.button.set_child(this._hintColor);
+      this._hintColor.set_child(this.icon);
+      this.minimumSize = "";
+      this.actor._delegate = this;
+      this.setValue(color);
+      this._setMinimunSize(width, height);
+   },
+
+   get value() {
+      return this.color;
+   },
+
+   setValue: function(color) {
+      if(this.color != color) {
+         this.color = color;
+         this._setStyle();
+      }
+   },
+
+   setSize: function(width, height) {
+      this.actor.set_size(width, height);
+      this._setMinimunSize(width, height);
+   },
+
+   _setMinimunSize: function(width, height) {
+      this.minimumSize = "min-width: " + width + "px; min-height: " + height + "px;"
+      this._setStyle();
+   },
+
+   _setStyle: function() {
+       this._hintColor.style = this.minimumSize + "border: 1px solid rgba(0,0,0,0.1); border-radius: 6px;" +
+           " background-color: rgba(" + this.color.red + "," + this.color.green + "," + this.color.blue + "," + this.color.alpha/255 + ");";
+   },
+};
+
+function ColorPalette() {
+   this._init.apply(this, arguments);
+}
+
+ColorPalette.prototype = {
+   _init: function(palette) {
+      this.palette = palette;
+      this.actor = new St.BoxLayout({ vertical: true });
+      this.actor.style = "padding: 10px 10px;";
+      if(this.palette)
+         this._buildPalete();
+   },
+
+   loadDefault: function() {
+      this.palette = [
+         ["#000"   , "#444"   , "#666"   , "#999"   , "#ccc"   , "#eee"   , "#f3f3f3", "#fff"   ],
+         ["#f00"   , "#f90"   , "#ff0"   , "#0f0"   , "#0ff"   , "#00f"   , "#90f"   , "#f0f"   ],
+         ["#f4cccc", "#fce5cd", "#fff2cc", "#d9ead3", "#d0e0e3", "#cfe2f3", "#d9d2e9", "#ead1dc"],
+         ["#ea9999", "#f9cb9c", "#ffe599", "#b6d7a8", "#a2c4c9", "#9fc5e8", "#b4a7d6", "#d5a6bd"],
+         ["#e06666", "#f6b26b", "#ffd966", "#93c47d", "#76a5af", "#6fa8dc", "#8e7cc3", "#c27ba0"],
+         ["#c00"   , "#e69138", "#f1c232", "#6aa84f", "#45818e", "#3d85c6", "#674ea7", "#a64d79"],
+         ["#900"   , "#b45f06", "#bf9000", "#38761d", "#134f5c", "#0b5394", "#351c75", "#741b47"],
+         ["#600"   , "#783f04", "#7f6000", "#274e13", "#0c343d", "#073763", "#20124d", "#4c1130"]
+      ];
+      this._buildPalete();
+   },
+
+   loadFromString: function(stringPalette) {
+      let colors;
+      let colorRows = stringPalette.split("::");
+      let palette = new Array();
+      for(let row in colorRows) {
+         colors = colorRows[row].split(",");
+         palette.push(colors);
+      }
+      this.palette = palette;
+      this._buildPalete();
+   },
+
+   saveToString: function() {
+      let colorRows = new Array();
+      for(let row in this.palette)
+         colorRows.push(this.palette[row].join(','));
+      return colorRows.join('::');
+   },
+
+   addColor: function(colorString) {
+      let paletteRow;
+      for(let posRow = 0; posRow < this.palette.length - 1; posRow++) {
+         paletteRow = this.palette[posRow];
+         for(let pos = 0; pos < paletteRow.length - 1; pos++) {
+            paletteRow[pos] = paletteRow[pos + 1];
+         }
+         paletteRow[paletteRow.length - 1] = this.palette[posRow + 1][0];
+      }
+      paletteRow = this.palette[this.palette.length - 1];
+      for(let pos = 0; pos < paletteRow.length - 1; pos++) {
+         paletteRow[pos] = paletteRow[pos + 1];
+      }
+      paletteRow[paletteRow.length - 1] = "#00000000";
+      this._fillPalete();
+   },
+
+   _fillPalete: function() {
+      let paletteRow, actorRow, bbt, color;
+      let [result, defaultColor] = Clutter.Color.from_string("#00000000");
+      let rowChildren = this.actor.get_childern();
+      for(let posRow in rowChildren) {
+         actorRow = rowChildren[posRow];
+         paletteRow = this.palette[row];
+         children = actorRow.get_childern();
+         for(let pos in children) {
+            actorColor = children[pos];
+            let [res, selectedColor] = Clutter.Color.from_string(paletteRow[pos]);
+            if(res)
+               color = selectedColor;
+            else
+               color = defaultColor;
+            actorColor._delegate.setValue(Color);
+            /*actorColor._delegate.button.remove_style_pseudo_class('disabled');
+            if(color.alpha == 0)
+               actorColor._delegate.button.add_style_pseudo_class('disabled');*/
+         }
+      }
+   },
+
+   _buildPalete: function() {
+      let paletteRow, actorRow, bbt, color;
+      let [result, defaultColor] = Clutter.Color.from_string("#00000000");
+      for(let row in this.palette) {
+         actorRow = new St.BoxLayout({ vertical: false });
+         paletteRow = this.palette[row];
+         for(let pos in paletteRow) {
+            let [res, selectedColor] = Clutter.Color.from_string(paletteRow[pos]);
+            if(res)
+               color = selectedColor;
+            else
+               color = defaultColor;
+            bbt = new ColorButton(color, 24, 24);
+            bbt.button.connect('button-release-event', Lang.bind(this, this._onButtonRelease));
+            bbt.button.remove_style_pseudo_class('disabled');
+            if(color.alpha == 0)
+               bbt.button.add_style_pseudo_class('disabled');
+            actorRow.add_actor(bbt.actor);
+         }
+         this.actor.add_actor(actorRow);
+      }
+   },
+
+   _onButtonRelease: function(actor, event) {
+      this.emit("select-color", actor._delegate.value);
+   },
+};
+Signals.addSignalMethods(ColorPalette.prototype);
