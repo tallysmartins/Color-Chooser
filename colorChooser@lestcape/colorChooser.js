@@ -31,6 +31,13 @@ const DND = imports.ui.dnd;
 
 const Main = imports.ui.main;
 
+const COLOR_FORMAT = {
+   HEXA: 1,
+   RGBA: 2,
+   HSLA: 3,
+   PIXL: 4
+};
+
 const SLIDER_SCROLL_STEP = 0.05; /* Slider scrolling step in % */
 
 function ColorChooser() {
@@ -48,11 +55,11 @@ ColorChooser.prototype = {
          this.spectrum = new ScaleSpectrum(color, [2, -1, 3, -2, 1, -3]);
          this.gradient = new GradientSelector(color);
          this.opacity = new Slider(color.alpha);
-         this.hint = new ColorButton(color, 100, 28);
          this.palette = new ColorPalette();
          this.savePalette = new ColorPalette();
-         this.pickerIcon = new IconButton(48, 48, 'color-chooser', St.IconType.FULLCOLOR);
-         this.hintSave = new IconButton(48, 48, 'gtk-yes', St.IconType.FULLCOLOR);
+         this.pickerIcon = new IconButton('color-chooser', St.IconType.FULLCOLOR, 48, 48);
+         this.saveButton = new IconButton('gtk-yes', St.IconType.FULLCOLOR, 48, 48);
+         this.colorInspector = new ColorInspector(color, 40, 28);
 
          this.actor = new St.BoxLayout({ vertical: true });
          this.topActor = new St.BoxLayout({ vertical: false });
@@ -60,17 +67,11 @@ ColorChooser.prototype = {
 
          this.colorActor = new St.BoxLayout({ vertical: false });
          this.selectionActor = new St.BoxLayout({ vertical: true });
-         this.inspectorActor = new St.BoxLayout({ style_class: 'color-inspector', vertical: false });
          this.opacityActor = new St.BoxLayout({ vertical: false });
          this.saveActor = new St.BoxLayout({ vertical: false });
-         this.entryColor = new St.Entry({ name: 'menu-search-entry', hint_text: _("Type a color..."), track_hover: true, can_focus: true });
 
          this.setSize(500, 300); // x = 380 300
-         this.entryColor.style = "width: -1px; font-family: monospace;";//color-entry
          this.opacity.actor.style = "padding-right: 10px;";
-         this.savePalette.actor.style = "padding: 10px 10px;";
-         //this.hintSave.actor.style = "padding-right: 10px;";
-         this.hint.actor.style = "padding-right: 10px;"
 
          this.actor.add(this.topActor, {x_fill: true, y_fill: true, x_align: St.Align.START, y_align: St.Align.START, expand: true });
          this.actor.add(this.bottomActor);
@@ -85,37 +86,31 @@ ColorChooser.prototype = {
          this.opacityActor.add(this.opacity.actor, {x_fill: true, y_fill: false, x_align: St.Align.START, y_align: St.Align.MIDDLE, expand: true });
 
          this.saveActor.add(this.savePalette.actor, {x_fill: true, y_fill: false, x_align: St.Align.END, y_align: St.Align.MIDDLE });
-         this.saveActor.add(this.hintSave.actor, {x_fill: true, y_fill: false, x_align: St.Align.END, y_align: St.Align.MIDDLE });
+         this.saveActor.add(this.saveButton.actor, {x_fill: true, y_fill: false, x_align: St.Align.END, y_align: St.Align.MIDDLE });
 
-         this.selectionActor.add(this.inspectorActor);
+         this.selectionActor.add(this.colorInspector.actor);
          this.selectionActor.add(this.palette.actor);
-
-         this.inspectorActor.add(this.hint.actor);
-         this.inspectorActor.add(this.entryColor, {x_fill: true, y_fill: false, x_align: St.Align.END, y_align: St.Align.MIDDLE, expand: true })
 
          this.colorActor.add(this.spectrum.actor);
          this.colorActor.add(this.gradient.actor, {x_fill: true, y_fill: true, x_align: St.Align.START, y_align: St.Align.START, expand: true });
 
          this.actor._delegate = this;
-         global.stage.set_key_focus(this.entryColor);
          this.palette.loadDefault();
-         this.savePalette.loadFromString("#00000000,#00000000,#00000000,#00000000,#00000000,#00000000")
+         this.savePalette.loadFromString("#00000000,#00000000,#00000000,#00000000,#00000000,#00000000");
          this._updateColor(color);
 
          this.spectrum.connect('value-changed', Lang.bind(this, this._onSpectrumColorChange));
          this.gradient.connect('selected-color-changed', Lang.bind(this, this._onGradientColorChange));
          this.opacity.connect('value-changed', Lang.bind(this, this._onOpacityColorChange));
          this.palette.connect('select-color', Lang.bind(this, this._onSelectedColorChange));
-         //this.entryColor.clutter_text.connect('text-changed', Lang.bind(this, this._onColorTextChanged));
-         this.entryColor.clutter_text.connect('key-press-event', Lang.bind(this, this._onColorTextChanged));
+         this.savePalette.connect('select-color', Lang.bind(this, this._onSelectedColorChange));
+         this.colorInspector.connect('color-changed', Lang.bind(this, this._onSelectedColorChange));
+         this.colorInspector.connect('color-format-changed', Lang.bind(this, this._onColorFormatChange));
          this.pickerIcon.button.connect('button-release-event', Lang.bind(this, this._executePicker));
+         this.saveButton.button.connect('button-release-event', Lang.bind(this, this._saveColor));
       } catch (e) {
          Main.notify("Err2 " + e.message);
       }
-   },
-
-   _executePicker: function() {
-      let dropper = new EyeDropper(this, Lang.bind(this, this._onSelectedColorChange));
    },
 
    setSize: function(width, height) {
@@ -131,16 +126,51 @@ ColorChooser.prototype = {
       }
    },
 
+   setFocusKeyFocus: function(palette) {
+      this.colorInspector.setFocusKeyFocus();
+   },
+
+   setFormat: function(format) {
+      this.colorInspector.setFormat(format);
+   },
+
+   setSaveColors: function(palette) {
+      let fixedPalette = ["#00000000","#00000000","#00000000","#00000000","#00000000","#00000000"];
+      if(palette) {
+         let paletteArray = palette.split(",");
+         let maxValue = Math.min(6, paletteArray.length);
+         for(let pos = 0; pos < maxValue; pos++) {
+            fixedPalette[pos] = paletteArray[pos];
+         }
+      }
+      let stringPalette = fixedPalette.join(",");
+      this.savePalette.loadFromString(stringPalette);
+   },
+
+   _executePicker: function() {
+      let dropper = new EyeDropper(this, Lang.bind(this, this._onSelectedColorChange));
+   },
+
+   _saveColor: function() {
+      let color = this.colorInspector.value;
+      this.savePalette.addColor(color.to_string());
+      let stringPalette = this.savePalette.saveToString();
+      this.emit('saved-colors-changed', stringPalette);
+   },
+
    _updateColor: function(color) {
       if(this.selectedColor != color) {
          this.selectedColor = color;
          let opacityValue = 255*this.opacity.value;
          if(opacityValue != color.alpha)
             color.alpha = opacityValue;
-         this.entryColor.set_text(color.to_string().toUpperCase());
-         this.hint.setValue(color);
+         this.colorInspector.setValue(color);
          this.emit('value-changed', color);
       }
+   },
+
+   _onColorFormatChange: function(inspector, format) {
+      this.emit('color-format-changed', format);
    },
 
    _onOpacityColorChange: function(opacity, value) {
@@ -150,17 +180,6 @@ ColorChooser.prototype = {
          let [res, color] = Clutter.Color.from_string(this.selectedColor.to_string());
          color.alpha = opacityValue;
          this._updateColor(color);
-      }
-   },
-
-   _onColorTextChanged: function(actor, event) {
-      let symbol = event.get_key_symbol();
-      if(symbol == Clutter.Return || symbol == Clutter.KP_Enter) {
-         let colorText = this.entryColor.get_text();
-         let [res, color] = Clutter.Color.from_string(colorText);
-         if((res)&&(!color.equal(this.selectedColor))) {
-            this.setCurrentColor(color);
-         }
       }
    },
 
@@ -1188,6 +1207,8 @@ Button.prototype = {
          style_class: 'modal-dialog-button',
          reactive:    true,
          can_focus:   true,
+         x_fill: true,
+         y_fill: false,
          label:       label
       });
       this.actor.add_style_class_name('button-label');
@@ -1205,24 +1226,20 @@ Button.prototype = {
 function IconButton() {
    this._init.apply(this, arguments);
 }
-//spacing: 21px;margin-left: 10px;
+
 IconButton.prototype = {
    __proto__: Button.prototype,
 
-   _init: function(width, height, iconName, iconType) {
+   _init: function(iconName, iconType, width, height) {
       Button.prototype._init.call(this, "", width, height);
-      this.actor = new St.Bin({ reactive: true });
+      this.actor = new St.Bin({ style_class: 'button-icon-box', reactive: true });
       this.actor.set_child(this.button);
-      /*if(!iconName)
-         iconName = "";*/
       if(!iconType)
          iconType = St.IconType.FULLCOLOR;
       this.icon = new St.Icon({ icon_name: iconName, icon_type: iconType });
 
       //this.button.add_style_class_name('button-icon');
       this.button.style = "padding: 0px 0px; border-radius: 6px;";
-      this.actor.style = "padding: 10px 10px;";
-      //this.actor.set_style_class_name('button-icon-box');
       this.button.set_child(this.icon);
       this.actor.set_size(width, height);
       this.icon.set_icon_size(20);
@@ -1237,12 +1254,10 @@ ColorButton.prototype = {
    __proto__: IconButton.prototype,
 
    _init: function(color, width, height) {
-      IconButton.prototype._init.call(this, width, height, "");
-      this.actor.style = "padding: 0px 0px;";
-      //this.actor = new St.BoxLayout({ vertical: true, reactive: true });
-      this._hintColor = new St.Bin();
+      IconButton.prototype._init.call(this, "", null, width, height);
+      this.actor.set_style_class_name('color-icon-box');
+      this._hintColor = new St.Bin({ x_expand: true, y_fill: true, x_align: St.Align.START });
       this.button.style = "padding: 2px 2px; border-radius: 6px;";
-      //this._hintColor.style = "border-radius: 12px;";
       this.button.set_child(this._hintColor);
       this._hintColor.set_child(this.icon);
       this.minimumSize = "";
@@ -1268,7 +1283,8 @@ ColorButton.prototype = {
    },
 
    _setMinimunSize: function(width, height) {
-      this.minimumSize = "min-width: " + width + "px; min-height: " + height + "px;"
+      //this.minimumSize = "min-width: " + width + "px; min-height: " + height + "px;"
+      //this._hintColor.set_size(width, height);
       this._setStyle();
    },
 
@@ -1285,8 +1301,7 @@ function ColorPalette() {
 ColorPalette.prototype = {
    _init: function(palette) {
       this.palette = palette;
-      this.actor = new St.BoxLayout({ vertical: true });
-      this.actor.style = "padding: 10px 10px;";
+      this.actor = new St.BoxLayout({ style_class: 'color-palette', vertical: true });
       if(this.palette)
          this._buildPalete();
    },
@@ -1326,29 +1341,29 @@ ColorPalette.prototype = {
 
    addColor: function(colorString) {
       let paletteRow;
-      for(let posRow = 0; posRow < this.palette.length - 1; posRow++) {
+      for(let posRow = this.palette.length - 1; posRow > 0; posRow--) {
          paletteRow = this.palette[posRow];
-         for(let pos = 0; pos < paletteRow.length - 1; pos++) {
-            paletteRow[pos] = paletteRow[pos + 1];
+         for(let pos = paletteRow.length - 1; pos > 0; pos--) {
+            paletteRow[pos] = paletteRow[pos - 1];
          }
-         paletteRow[paletteRow.length - 1] = this.palette[posRow + 1][0];
+         paletteRow[0] = this.palette[posRow - 1][this.palette[posRow - 1].length - 1];
       }
-      paletteRow = this.palette[this.palette.length - 1];
-      for(let pos = 0; pos < paletteRow.length - 1; pos++) {
-         paletteRow[pos] = paletteRow[pos + 1];
+      paletteRow = this.palette[this.palette.length -1];
+      for(let pos = paletteRow.length - 1; pos > 0; pos--) {
+         paletteRow[pos] = paletteRow[pos - 1];
       }
-      paletteRow[paletteRow.length - 1] = "#00000000";
+      paletteRow = this.palette[0][0] = colorString;
       this._fillPalete();
    },
 
    _fillPalete: function() {
-      let paletteRow, actorRow, bbt, color;
+      let paletteRow, actorRow, bbt, color, children, actorColor;
       let [result, defaultColor] = Clutter.Color.from_string("#00000000");
-      let rowChildren = this.actor.get_childern();
+      let rowChildren = this.actor.get_children();
       for(let posRow in rowChildren) {
          actorRow = rowChildren[posRow];
-         paletteRow = this.palette[row];
-         children = actorRow.get_childern();
+         paletteRow = this.palette[posRow];
+         children = actorRow.get_children();
          for(let pos in children) {
             actorColor = children[pos];
             let [res, selectedColor] = Clutter.Color.from_string(paletteRow[pos]);
@@ -1356,10 +1371,13 @@ ColorPalette.prototype = {
                color = selectedColor;
             else
                color = defaultColor;
-            actorColor._delegate.setValue(Color);
-            /*actorColor._delegate.button.remove_style_pseudo_class('disabled');
-            if(color.alpha == 0)
-               actorColor._delegate.button.add_style_pseudo_class('disabled');*/
+            actorColor._delegate.setValue(color);
+            actorColor._delegate.button.remove_style_pseudo_class('disabled');
+            actorColor._delegate.button.set_reactive(true);
+            if(color.alpha == 0) {
+               actorColor._delegate.button.add_style_pseudo_class('disabled');
+               actorColor._delegate.button.set_reactive(false);
+            }
          }
       }
    },
@@ -1367,6 +1385,7 @@ ColorPalette.prototype = {
    _buildPalete: function() {
       let paletteRow, actorRow, bbt, color;
       let [result, defaultColor] = Clutter.Color.from_string("#00000000");
+      this.actor.destroy_all_children();
       for(let row in this.palette) {
          actorRow = new St.BoxLayout({ vertical: false });
          paletteRow = this.palette[row];
@@ -1379,8 +1398,11 @@ ColorPalette.prototype = {
             bbt = new ColorButton(color, 24, 24);
             bbt.button.connect('button-release-event', Lang.bind(this, this._onButtonRelease));
             bbt.button.remove_style_pseudo_class('disabled');
-            if(color.alpha == 0)
+            bbt.button.set_reactive(true);
+            if(color.alpha == 0) {
                bbt.button.add_style_pseudo_class('disabled');
+               bbt.button.set_reactive(false);
+            }
             actorRow.add_actor(bbt.actor);
          }
          this.actor.add_actor(actorRow);
@@ -1388,7 +1410,88 @@ ColorPalette.prototype = {
    },
 
    _onButtonRelease: function(actor, event) {
-      this.emit("select-color", actor._delegate.value);
+      if(!actor.has_style_pseudo_class('disabled'))
+         this.emit("select-color", actor._delegate.value);
    },
 };
 Signals.addSignalMethods(ColorPalette.prototype);
+
+function ColorInspector() {
+   this._init.apply(this, arguments);
+}
+
+ColorInspector.prototype = {
+   _init: function(color, width, height) {
+      this._selectedColor = color;
+      this.actor = new St.BoxLayout({ style_class: 'color-inspector', vertical: false });
+      this._colorHint = new ColorButton(color, width, height);
+      this._entryColor = new St.Entry({ name: 'menu-search-entry', hint_text: _("Type a color..."), track_hover: true, can_focus: true });
+      this._entryColor.style = "width: -1px; min-width: 100px; font-family: monospace;";//color-entry
+      this.actor.add(this._colorHint.actor);
+      this.actor.add(this._entryColor, {x_fill: true, y_fill: false, x_align: St.Align.END, y_align: St.Align.MIDDLE, expand: true });
+      this._formats = [COLOR_FORMAT.HEXA, COLOR_FORMAT.RGBA, COLOR_FORMAT.HSLA, COLOR_FORMAT.PIXL];
+      this._format = 0;
+
+      //this.entryColor.clutter_text.connect('text-changed', Lang.bind(this, this._onColorTextChanged));
+      this._entryColor.clutter_text.connect('key-press-event', Lang.bind(this, this._onColorTextChanged));
+      this._colorHint.button.connect('button-release-event', Lang.bind(this, this._onButtonRelease));
+   },
+
+   setFocusKeyFocus: function() {
+      global.stage.set_key_focus(this._entryColor);
+   },
+
+   setFormat: function(format) {
+      this._format = this._formats.indexOf(format);
+      this.setValue(this._selectedColor);
+   },
+
+   _onButtonRelease: function() {
+      this._format++
+      if(this._format == this._formats.length)
+         this._format = 0;
+      this.setValue(this._selectedColor);
+      this.emit('color-format-changed', this._formats[this._format]);
+   },
+
+   get value() {
+      return this._selectedColor;
+   },
+
+   setValue: function(color) {
+      this._selectedColor = color;
+      let format = this._formats[this._format];
+      if(format == COLOR_FORMAT.HEXA) {
+         this._entryColor.set_text(color.to_string().toUpperCase());
+      } else if(format == COLOR_FORMAT.RGBA) {
+         this._entryColor.set_text("RGBA(%s,%s,%s,%s)".format(color.red, color.green, color.blue, color.alpha));
+      } else if(format == COLOR_FORMAT.PIXL) {
+         this._entryColor.set_text("PIXEL(%s)".format(color.to_pixel()));
+      } else if(format == COLOR_FORMAT.HSLA) {
+         let [hue, luminance, saturation] = color.to_hls();
+         let a = Math.round(1000*color.alpha/255)/1000;
+         let l = Math.round(1000*luminance/255)/1000;
+         let s = Math.round(1000*saturation/255)/1000;
+         this._entryColor.set_text("HSLA(%s,%s,%s,%s)".format(hue, s, l, a));
+      } 
+      this._colorHint.setValue(color);
+   },
+
+   _onColorTextChanged: function(actor, event) {
+      let symbol = event.get_key_symbol();
+      if(symbol == Clutter.Return || symbol == Clutter.KP_Enter) {
+         let colorText = this._entryColor.get_text();
+         let [res, color] = Clutter.Color.from_string(colorText);
+         if((res)&&(!color.equal(this._selectedColor))) {
+            this.setValue(color);
+            this.emit('color-changed', color);
+         }
+      }
+   },
+
+   destroy: function() {
+      this._colorHint.destoy();
+      this.actor.destroy();
+   }
+};
+Signals.addSignalMethods(ColorInspector.prototype);

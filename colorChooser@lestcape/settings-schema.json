@@ -1,0 +1,18 @@
+{
+   "format": {
+        "type": "combobox",
+        "description": "Color Format:",
+        "default": "HEXA",
+        "tooltip": "Select a color Format.",
+        "options": {
+            "Hexadecimal": "HEXA",
+            "RGB": "RGBA",
+            "HSL": "HSLA",
+            "Pixel": "PIXL"
+        }
+    },
+    "saved-colors": {
+        "type": "generic",
+        "default": ""
+    }
+}
