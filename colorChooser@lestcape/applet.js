@@ -52,8 +52,8 @@ MyApplet.prototype = {
             this.chooser = new ColorChooser.ColorChooser(color);
             section.actor.add(this.chooser.actor, {x_fill: true, y_fill: true, y_align: St.Align.START, expand: true});
 
-            this.chooser.connect('saved-colors-changed', Lang.bind(this, this._onSavedColorsChanged));
-            this.chooser.connect('color-format-changed', Lang.bind(this, this._onChooserColorFormatChanged));
+            this._savedId = this.chooser.connect('saved-colors-changed', Lang.bind(this, this._onSavedColorsChanged));
+            this._formatId = this.chooser.connect('color-format-changed', Lang.bind(this, this._onChooserColorFormatChanged));
             this.menu.connect('open-state-changed', Lang.bind(this, this._onOpenStateChanged));
 
             this.settings = new Settings.AppletSettings(this, this._uuid, this.instance_id);
@@ -94,17 +94,32 @@ MyApplet.prototype = {
 
     _onSavedColorsChanged: function(chooser, savedColors) {
         this.savedColors = savedColors;
+        this.menu.close(true);
+    },
+
+    _onOpenStateChanged: function(menu, open) {
+        if(open) {
+            this.chooser.setFocusKeyFocus();
+        }
     },
 
     on_applet_clicked: function(event) {
         this.menu.toggle();
     },
 
-   _onOpenStateChanged: function(menu, open) {
-      if(open) {
-         this.chooser.setFocusKeyFocus();
-      }
-   }
+    on_applet_removed_from_panel: function() {
+        if(this._savedId > 0)
+           this.chooser.disconnect(this._savedId);
+        if(this._formatId > 0)
+           this.chooser.disconnect(this._formatId);
+        this.settings.finalize();
+        this.chooser.destroy();
+        this.menu.destroy();
+        this.menu = null;
+        this.menuManager = null;
+        this.chooser = null;
+        this.actor.destroy();
+    }
 };
 
 function main(metadata, orientation, panel_height, instance_id) {

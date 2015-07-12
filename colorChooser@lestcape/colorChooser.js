@@ -40,6 +40,61 @@ const COLOR_FORMAT = {
 
 const SLIDER_SCROLL_STEP = 0.05; /* Slider scrolling step in % */
 
+function SignalManager() {
+   this._init.apply(this, arguments);
+}
+
+SignalManager.prototype = {
+
+   _init: function(object) {
+      this._object = object;
+      this._storage = new Map();
+   },
+
+   connect: function(obj, sigName, callback, bind, force) {
+      let id = 0;
+      if(!this._storage.has(sigName))
+         this._storage.set(sigName, []);
+      if(bind)
+         id = obj.connect(sigName, Lang.bind(bind, callback));
+      else
+         id = obj.connect(sigName, Lang.bind(this._object, callback));
+      this._storage.get(sigName).push([obj, id, callback]);
+      return id;
+   },
+
+   disconnect: function(sigName, obj, callbac) {
+      if(!this._storage.has(sigName))
+         return false;
+
+      this._storage.get(sigName).forEach(Lang.bind(this, function (signal, i) {
+         if((!obj || signal[0] == obj) &&
+            (!callback || signal[2] == callback)) {
+               signal[0].disconnect(signal[1]);
+            this._storage.get(sigName).splice(i, 1);
+         }
+      }));
+
+      if(this._storage.get(sigName).length == 0)
+         this._storage.delete(sigName);
+      return true;
+   },
+
+   disconnectAllSignals: function() {
+      for(let signals of this._storage.values()) {
+         for(let signal of signals) {
+            signal[0].disconnect(signal[1]);
+         }
+      }
+      this._storage.clear();
+   },
+  
+   destroy: function() {
+      this.disconnectAllSignals();
+      this._storage = null;
+   }
+};
+
 function ColorChooser() {
    this._init.apply(this, arguments);
 }
@@ -47,6 +102,9 @@ function ColorChooser() {
 ColorChooser.prototype = {
    _init: function(color) {
       try {
+         this.actor = new St.BoxLayout({ vertical: true });
+         this.actor._delegate = this;
+
          if(!color) {
             let [res, colorInit] = Clutter.Color.from_string("#FF0000FF");
             color = colorInit;
@@ -57,59 +115,66 @@ ColorChooser.prototype = {
          this.opacity = new Slider(color.alpha);
          this.palette = new ColorPalette();
          this.savePalette = new ColorPalette();
-         this.pickerIcon = new IconButton('color-chooser', St.IconType.FULLCOLOR, 48, 48);
-         this.saveButton = new IconButton('gtk-yes', St.IconType.FULLCOLOR, 48, 48);
+         this.pickerIcon = new IconButton('color-chooser', St.IconType.FULLCOLOR, 20, 32, 32);
+         this.saveButton = new IconButton('gtk-yes', St.IconType.FULLCOLOR, 20, 32, 32);
          this.colorInspector = new ColorInspector(color, 40, 28);
 
-         this.actor = new St.BoxLayout({ vertical: true });
-         this.topActor = new St.BoxLayout({ vertical: false });
-         this.bottomActor = new St.BoxLayout({ vertical: false });
+         let topActor = new St.BoxLayout({ vertical: false });
+         let bottomActor = new St.BoxLayout({ vertical: false });
 
-         this.colorActor = new St.BoxLayout({ vertical: false });
-         this.selectionActor = new St.BoxLayout({ vertical: true });
-         this.opacityActor = new St.BoxLayout({ vertical: false });
-         this.saveActor = new St.BoxLayout({ vertical: false });
+         let colorActor = new St.BoxLayout({ vertical: false });
+         let selectionActor = new St.BoxLayout({ vertical: true });
+         let opacityActor = new St.BoxLayout({ vertical: false });
+         let saveActor = new St.BoxLayout({ vertical: false });
+
+         let pickerBin = new St.Bin();
+         let saveBin = new St.Bin();
 
          this.setSize(500, 300); // x = 380 300
-         this.opacity.actor.style = "padding-right: 10px;";
+         this.opacity.actor.style = "padding-right: 8px;";
+         pickerBin.style = "padding: 8px 8px;";
+         saveBin.style = "padding: 8px 8px;";
 
-         this.actor.add(this.topActor, {x_fill: true, y_fill: true, x_align: St.Align.START, y_align: St.Align.START, expand: true });
-         this.actor.add(this.bottomActor);
+         pickerBin.set_child(this.pickerIcon.actor);
+         saveBin.set_child(this.saveButton.actor);
 
-         this.topActor.add(this.colorActor, {x_fill: true, y_fill: true, x_align: St.Align.START, y_align: St.Align.START, expand: true });
-         this.topActor.add(this.selectionActor);
+         this.actor.add(topActor, {x_fill: true, y_fill: true, x_align: St.Align.START, y_align: St.Align.START, expand: true });
+         this.actor.add(bottomActor);
 
-         this.bottomActor.add(this.opacityActor, {x_fill: true, y_fill: true, x_align: St.Align.START, y_align: St.Align.START, expand: true });
-         this.bottomActor.add(this.saveActor);
+         topActor.add(colorActor, {x_fill: true, y_fill: true, x_align: St.Align.START, y_align: St.Align.START, expand: true });
+         topActor.add(selectionActor);
 
-         this.opacityActor.add(this.pickerIcon.actor);
-         this.opacityActor.add(this.opacity.actor, {x_fill: true, y_fill: false, x_align: St.Align.START, y_align: St.Align.MIDDLE, expand: true });
+         bottomActor.add(opacityActor, {x_fill: true, y_fill: true, x_align: St.Align.START, y_align: St.Align.START, expand: true });
+         bottomActor.add(saveActor);
 
-         this.saveActor.add(this.savePalette.actor, {x_fill: true, y_fill: false, x_align: St.Align.END, y_align: St.Align.MIDDLE });
-         this.saveActor.add(this.saveButton.actor, {x_fill: true, y_fill: false, x_align: St.Align.END, y_align: St.Align.MIDDLE });
+         opacityActor.add(pickerBin);
+         opacityActor.add(this.opacity.actor, {x_fill: true, y_fill: false, x_align: St.Align.START, y_align: St.Align.MIDDLE, expand: true });
 
-         this.selectionActor.add(this.colorInspector.actor);
-         this.selectionActor.add(this.palette.actor);
+         saveActor.add(this.savePalette.actor, {x_fill: true, y_fill: false, x_align: St.Align.END, y_align: St.Align.MIDDLE });
+         saveActor.add(saveBin, {x_fill: true, y_fill: false, x_align: St.Align.END, y_align: St.Align.MIDDLE });
 
-         this.colorActor.add(this.spectrum.actor);
-         this.colorActor.add(this.gradient.actor, {x_fill: true, y_fill: true, x_align: St.Align.START, y_align: St.Align.START, expand: true });
+         selectionActor.add(this.colorInspector.actor);
+         selectionActor.add(this.palette.actor);
 
-         this.actor._delegate = this;
+         colorActor.add(this.spectrum.actor);
+         colorActor.add(this.gradient.actor, {x_fill: true, y_fill: true, x_align: St.Align.START, y_align: St.Align.START, expand: true });
+
          this.palette.loadDefault();
          this.savePalette.loadFromString("#00000000,#00000000,#00000000,#00000000,#00000000,#00000000");
          this._updateColor(color);
 
-         this.spectrum.connect('value-changed', Lang.bind(this, this._onSpectrumColorChange));
-         this.gradient.connect('selected-color-changed', Lang.bind(this, this._onGradientColorChange));
-         this.opacity.connect('value-changed', Lang.bind(this, this._onOpacityColorChange));
-         this.palette.connect('select-color', Lang.bind(this, this._onSelectedColorChange));
-         this.savePalette.connect('select-color', Lang.bind(this, this._onSelectedColorChange));
-         this.colorInspector.connect('color-changed', Lang.bind(this, this._onSelectedColorChange));
-         this.colorInspector.connect('color-format-changed', Lang.bind(this, this._onColorFormatChange));
-         this.pickerIcon.button.connect('button-release-event', Lang.bind(this, this._executePicker));
-         this.saveButton.button.connect('button-release-event', Lang.bind(this, this._saveColor));
+         this.signalManager = new SignalManager(this);
+         this.signalManager.connect(this.spectrum, 'value-changed', this._onSpectrumColorChange);
+         this.signalManager.connect(this.gradient, 'selected-color-changed', this._onGradientColorChange);
+         this.signalManager.connect(this.opacity, 'value-changed', this._onOpacityColorChange);
+         this.signalManager.connect(this.palette, 'select-color', this._onSelectedColorChange);
+         this.signalManager.connect(this.savePalette, 'select-color', this._onSelectedColorChange);
+         this.signalManager.connect(this.colorInspector, 'color-changed', this._onSelectedColorChange);
+         this.signalManager.connect(this.colorInspector, 'color-format-changed', this._onColorFormatChange);
+         this.pickerIcon.actor.connect('button-release-event', Lang.bind(this, this._executePicker));
+         this.saveButton.actor.connect('button-release-event', Lang.bind(this, this._saveColor));
       } catch (e) {
-         Main.notify("Err2 " + e.message);
+         global.logError(e);
       }
    },
 
@@ -174,7 +239,6 @@ ColorChooser.prototype = {
    },
 
    _onOpacityColorChange: function(opacity, value) {
-      //Main.notify("Value " + value)
       let opacityValue = 255*this.opacity.value;
       if(opacityValue != this.selectedColor.alpha) {
          let [res, color] = Clutter.Color.from_string(this.selectedColor.to_string());
@@ -196,9 +260,17 @@ ColorChooser.prototype = {
    },
 
    destroy: function() {
+      this.signalManager.destroy();
       this.spectrum.destroy();
       this.gradient.destroy();
+      this.opacity.destroy();
+      this.palette.destroy();
+      this.savePalette.destroy();
+      this.pickerIcon.destroy();
+      this.saveButton.destroy();
+      this.colorInspector.destroy();
       this.actor.destroy();
+      this.emit('destroy');
    }
 };
 Signals.addSignalMethods(ColorChooser.prototype);
@@ -226,6 +298,7 @@ Slider.prototype = {
       this.actor.connect('button-press-event', Lang.bind(this, this._startDragging));
       this.actor.connect('scroll-event', Lang.bind(this, this._onScrollEvent));
 
+      this.actor._delegate = this;
       this._releaseId = this._motionId = 0;
       this._dragging = false;
    },
@@ -405,6 +478,11 @@ Slider.prototype = {
          return true;
       }
       return false;
+   },
+
+   destroy: function() {
+      this.actor.destroy();
+      this.emit('destroy');
    }
 };
 Signals.addSignalMethods(Slider.prototype);
@@ -419,6 +497,7 @@ Scale.prototype = {
    _init: function(value, vertical) {
       Slider.prototype._init.call(this, value, vertical);
       this._slider.style = "min-width: 20px; min-height: 20px;";
+      this.actor._delegate = this;
    },
 
    _onActorRepaint: function(area) {
@@ -581,7 +660,6 @@ ScaleSpectrum.prototype = {
             this._data[pos + 2] = color[2]; //blue;
             this._data[pos + 3] = 255;//255 - x;//opacity
          } else {
-            Main.notify("Es: " + x + " de " + maxValue + " " + index)
             break;
          }
       }
@@ -628,6 +706,7 @@ ScaleSpectrum.prototype = {
    },
 
    destroy: function() {
+      this._data = null;
       this.actor.destroy();
       this.emit('destroy');
    }
@@ -642,6 +721,7 @@ GradientSelector.prototype = {
 
    _init: function(color) {
       this.actor = new Cinnamon.GenericContainer({ style_class: 'color-gradient', reactive: true });
+      this.actor._delegate = this;
       this._container = new St.Bin({ x_fill: true, y_fill: true, x_align: St.Align.START });
       this._cursor = new CursorColor(16);   
 
@@ -654,24 +734,64 @@ GradientSelector.prototype = {
       this._releaseId = 0;
       this._isInUpdate = false;
       this._updateIsNeeded = false;
-      this.color = null;
-      this.selectedColor = null;
+      this._color = color;
+      this._selectedColor = color;
 
-      this.actor._delegate = this;
       this._data = new Array(4*256*256);
       this._imageActor = this._getGradientImage();
       this._container.set_child(this._imageActor);
       this._imageActor.set_reactive(true);
-      this.setGradientColor(color);
-      this.selectTargetColor(color);
 
       this.actor.add_actor(this._container);
       this.actor.add_actor(this._cursor.actor);
+
+      this._updateColor(color);
+      this._cursor.setColor(color);
+      this._imageActor.content.set_data(this._data, Cogl.PixelFormat.RGBA_8888, 256, 256, 1024);
 
       this.actor.connect('get-preferred-width', Lang.bind(this, this._getPreferredWidth));
       this.actor.connect('get-preferred-height', Lang.bind(this, this._getPreferredHeight));
       this.actor.connect('allocate', Lang.bind(this, this._allocate));
       this.actor.connect('button-press-event', Lang.bind(this, this._onButtonPressEvent));
+   },
+
+   setGradientColor: function(color) {
+      if((!this._color)||(!this._color.equal(color))) {
+         this._color = color;
+         this._updateColor(color);
+         this._imageActor.content.set_data(this._data, Cogl.PixelFormat.RGBA_8888, 256, 256, 1024);
+         this._setHandle(this._targetX, this._targetY);
+         this.emit('gradient-color-changed', color);
+      }
+   },
+
+   selectTargetColor: function(color) {
+     if((!this._selectedColor)||(!this._selectedColor.equal(color))) {
+         this._selectedColor = color;
+         let pos = this._findColorPos(color);
+         if(pos == -1)
+            pos = this._estimateColorPos(this._selectedColor, color);
+         if(pos != -1) {
+            let x = (pos/4)%256;
+            let y = pos/(4*256);
+            let [aW, aH] = this._container.get_transformed_size();
+            let xPos = (aW*x/256);
+            let yPos = (aH*y/256);
+            this._setHandle(xPos, yPos);
+         } else  {
+            global.logError("Fail to found position");
+            //Main.notify("Fail to found position");
+         }
+      }
+   },
+
+   setTargetColorWithGradient: function(gradientColor, color) {
+      this.setGradientColor(gradientColor);
+      this.selectTargetColor(color);
+   },
+
+   setSize: function(width, height) {
+      this.actor.set_size(width, height);
    },
 
    _getGradientImage: function() {
@@ -682,41 +802,6 @@ GradientSelector.prototype = {
          Clutter.ScalingFilter.LINEAR);
       imageActor.set_content(coverImage);
       return imageActor;
-   },
-
-   setGradientColor: function(color) {
-      if((!this.color)||(!this.color.equal(color))) {
-         this.color = color;
-         this._updateColor(color);
-         this._imageActor.content.set_data(this._data, Cogl.PixelFormat.RGBA_8888, 256, 256, 1024);
-         this._setHandle(this._targetX, this._targetY);
-         this.emit('gradient-color-changed', color);
-      }
-   },
-
-   selectTargetColor: function(color) {
-     if((!this.selectedColor)||(!this.selectedColor.equal(color))) {
-         this.selectedColor = color;
-         let pos = this._findColorPos(color);
-         if(pos == -1)
-            pos = this._estimateColorPos(this.selectedColor, color);
-         //Main.notify("Found " + pos1 + " real " + pos);
-         if(pos != -1) {
-            let x = (pos/4)%256;
-            let y = pos/(4*256);
-            let [aW, aH] = this._container.get_transformed_size();
-            let xPos = (aW*x/256);
-            let yPos = (aH*y/256);
-            this._setHandle(xPos, yPos);
-         } else  {
-            Main.notify("Fail to found position");
-         }
-      }
-   },
-
-   setTargetColorWithGradient: function(gradientColor, color) {
-      this.setGradientColor(gradientColor);
-      this.selectTargetColor(color);
    },
 
    // FIXME: This is a replacement for _findColorPos
@@ -770,7 +855,6 @@ GradientSelector.prototype = {
             if((color.red == this._data[pos]) &&
                (color.green == this._data[pos + 1]) &&
                (color.blue == this._data[pos + 2])) {
-               //Main.notify("ff pos: " + x + " " + y)
                return pos;
             }
          }
@@ -799,25 +883,21 @@ GradientSelector.prototype = {
                    Main.notify("found:" + this._data[pos + 0] + " " + this._data[pos + 1] + " " + this._data[pos + 2])
                    Main.notify("color:" + color.red + " " + color.green + " " + color.blue)
                }
-               if((this.selectedColor)&&(this.selectedColor.red == this._data[pos]) &&
-                  (this.selectedColor.green == this._data[pos + 1]) &&
-                  (this.selectedColor.blue == this._data[pos + 2])) {
+               if((this._selectedColor)&&(this._selectedColor.red == this._data[pos]) &&
+                  (this._selectedColor.green == this._data[pos + 1]) &&
+                  (this._selectedColor.blue == this._data[pos + 2])) {
                   Main.notify("is there")
                }*/
             }
          }
          if(this._updateIsNeeded) {
             this._updateIsNeed = false;
-            this._updateColor(this.color);
+            this._updateColor(this._color);
          }
          this._isInUpdate = false;
       } else {
          this._updateIsNeeded = true;
       }
-   },
-
-   setSize: function(width, height) {
-      this.actor.set_size(width, height);
    },
 
    _getColorAtPos: function(posX, posY) {
@@ -895,8 +975,8 @@ GradientSelector.prototype = {
       this._targetX = posX;
       this._targetY = posY;
       let color = this._getColorAtPos(posX, posY);
-      if((!this.selectedColor) || (color != this.selectedColor)) {
-         this.selectedColor = color;
+      if((!this._selectedColor) || (color != this._selectedColor)) {
+         this._selectedColor = color;
          this._cursor.setColor(color);
          this.actor.queue_relayout();
          this.emit('selected-color-changed', color);
@@ -917,6 +997,7 @@ GradientSelector.prototype = {
    },
 
    destroy: function() {
+      this._data = null;
       this.actor.destroy();
       this.emit('destroy');
    }
@@ -929,8 +1010,7 @@ function CursorColor() {
 
 CursorColor.prototype = {
    _init: function(size, color, forScreen) {
-      this.actor = new St.DrawingArea({ style_class: 'popup-slider-menu-item', reactive: true });
-      this.actor.add_style_class_name('color-cursor');
+      this.actor = new St.DrawingArea({ style_class: 'color-cursor', reactive: true });
       this.actor.set_size(size, size);
       this.actor.connect('repaint', Lang.bind(this, this._onCursorRepaint));
       this._color = color;
@@ -1071,11 +1151,11 @@ CursorColor.prototype = {
       cr.stroke();
 
       cr.$dispose();
-      return true;
    },
 
    destroy: function() {
       this.actor.destroy();
+      this.emit('destroy');
    }
 };
 Signals.addSignalMethods(CursorColor.prototype);
@@ -1093,10 +1173,11 @@ EyeDropper.prototype = {
          let [res, selectedColor] = Clutter.Color.from_string("#FFFFFF");
          this._cursor = new CursorColor(16, selectedColor, true);
          this._xfixesCursor = Cinnamon.XFixesCursor.get_for_stage(global.stage);
-         this.stageEventIds = new Array();
-         this.stageEventIds.push(global.stage.connect("captured-event", Lang.bind(this, this.onStageEvent)));
-         this.stageEventIds.push(global.stage.connect("enter-event", Lang.bind(this, this.onStageEvent)));
-         this.stageEventIds.push(global.stage.connect("leave-event", Lang.bind(this, this.onStageEvent)));
+
+         this.signalManager = new SignalManager(this);
+         this.signalManager.connect(global.stage, 'captured-event', this._onStageEvent);
+         this.signalManager.connect(global.stage, 'enter-event', this._onStageEvent);
+         this.signalManager.connect(global.stage, 'leave-event', this._onStageEvent);
 
          this.actor = new St.Group({ visible: false, x: 0, y: 0 });
          Main.uiGroup.add_actor(this.actor);
@@ -1107,22 +1188,17 @@ EyeDropper.prototype = {
          this.actor.add_constraint(constraint);
          this.actor.add_actor(this._cursor.actor);
 
-         Mainloop.idle_add(Lang.bind(this, this.show));
+         if((this.menu) && (this.menu.sourceActor)) {
+            this._realSourceContains = this.menu.sourceActor.contains;
+            this.menu.sourceActor.contains = function() { return true; }
+            DND.currentDraggable = global.stage.key_focus;
+         }
+         global.set_stage_input_mode(Cinnamon.StageInputMode.FULLSCREEN);
+         this._xfixesCursor.hide();
+         this.actor.show();
       } catch(e) {
-         Main.notify("Error:", e.message);
          global.logError(e);
       }
-   },
-
-   show: function() {
-      if((this.menu) && (this.menu.sourceActor)) {
-         this._realSourceContains = this.menu.sourceActor.contains;
-         this.menu.sourceActor.contains = function() { return true; }
-         DND.currentDraggable = global.stage.key_focus;
-      }
-      global.set_stage_input_mode(Cinnamon.StageInputMode.FULLSCREEN);
-      this._xfixesCursor.hide();
-      this.actor.show();
    },
 
    _findTopMenu: function(colorChooser) {
@@ -1141,7 +1217,7 @@ EyeDropper.prototype = {
       this._cursor.actor.queue_relayout();
    },
     
-   onStageEvent: function(actor, event) {
+   _onStageEvent: function(actor, event) {
       try {
          if(event.type) {
             let type = event.type();
@@ -1163,7 +1239,6 @@ EyeDropper.prototype = {
          }
          return true;
       } catch(e) {
-         Main.notify("Error:", e.message);
          global.logError(e);
       }
 
@@ -1178,11 +1253,9 @@ EyeDropper.prototype = {
    },
 
    destroy: function() {
-      for(let i = 0; i < this.stageEventIds.length; i++)
-         global.stage.disconnect(this.stageEventIds[i]);
+      this.signalManager.destroy();
       global.focus_manager.remove_group(this.actor);
       Main.uiGroup.remove_actor(this.actor);
-      this.actor.destroy();
 
       global.set_stage_input_mode(Cinnamon.StageInputMode.NORMAL);
       if((this.menu) && (this.menu.sourceActor)) {
@@ -1191,7 +1264,11 @@ EyeDropper.prototype = {
          DND.currentDraggable = null;
          global.set_stage_input_mode(Cinnamon.StageInputMode.FULLSCREEN);
       }
+      this.menu = null;
       this._xfixesCursor.show();
+      this._cursor.destroy();
+      this._cursor = null;
+      this.actor.destroy();
       this.emit("destroy");
    }
 };
@@ -1206,64 +1283,42 @@ Button.prototype = {
       this.actor = new St.Button({
          style_class: 'modal-dialog-button',
          reactive:    true,
-         can_focus:   true,
-         x_fill: true,
-         y_fill: false,
+         //can_focus:   true,
+         x_fill:      true,
+         y_fill:      true,
          label:       label
       });
-      this.actor.add_style_class_name('button-label');
-      this._label = label;
-      this.button = this.actor;
       this.actor._delegate = this;
+      this._label = label;
       this.actor.set_size(width, height);
    },
 
    setSize: function(width, height) {
       this.actor.set_size(width, height);
    },
+
+   destroy: function() {
+      this.actor.destroy();
+      this.emit("destroy");
+   }
 };
-
-function IconButton() {
-   this._init.apply(this, arguments);
-}
-
-IconButton.prototype = {
-   __proto__: Button.prototype,
-
-   _init: function(iconName, iconType, width, height) {
-      Button.prototype._init.call(this, "", width, height);
-      this.actor = new St.Bin({ style_class: 'button-icon-box', reactive: true });
-      this.actor.set_child(this.button);
-      if(!iconType)
-         iconType = St.IconType.FULLCOLOR;
-      this.icon = new St.Icon({ icon_name: iconName, icon_type: iconType });
-
-      //this.button.add_style_class_name('button-icon');
-      this.button.style = "padding: 0px 0px; border-radius: 6px;";
-      this.button.set_child(this.icon);
-      this.actor.set_size(width, height);
-      this.icon.set_icon_size(20);
-   },
-};
+Signals.addSignalMethods(Button.prototype);
 
 function ColorButton() {
    this._init.apply(this, arguments);
 }
 
 ColorButton.prototype = {
-   __proto__: IconButton.prototype,
+   __proto__: Button.prototype,
 
    _init: function(color, width, height) {
-      IconButton.prototype._init.call(this, "", null, width, height);
-      this.actor.set_style_class_name('color-icon-box');
-      this._hintColor = new St.Bin({ x_expand: true, y_fill: true, x_align: St.Align.START });
-      this.button.style = "padding: 2px 2px; border-radius: 6px;";
-      this.button.set_child(this._hintColor);
-      this._hintColor.set_child(this.icon);
-      this.minimumSize = "";
+      Button.prototype._init.call(this, "", width, height);
       this.actor._delegate = this;
+      this.actor.add_style_class_name('color-button');
+      this._colorBox = new St.Bin({ style_class: 'color-button-box', x_fill: true, y_fill: true, x_align: St.Align.START });
+      this.actor.style = "padding: 2px 2px; border-radius: 6px;";
+      this.actor.set_child(this._colorBox);
       this.setValue(color);
-      this._setMinimunSize(width, height);
    },
 
    get value() {
@@ -1273,25 +1328,36 @@ ColorButton.prototype = {
    setValue: function(color) {
       if(this.color != color) {
          this.color = color;
-         this._setStyle();
+         let style = "background-color: rgba(%s,%s,%s,%s);".format(
+            this.color.red,
+            this.color.green,
+            this.color.blue,
+            this.color.alpha/255
+         );
+         this._colorBox.style = style;
       }
-   },
+   }
+};
 
-   setSize: function(width, height) {
-      this.actor.set_size(width, height);
-      this._setMinimunSize(width, height);
-   },
+function IconButton() {
+   this._init.apply(this, arguments);
+}
 
-   _setMinimunSize: function(width, height) {
-      //this.minimumSize = "min-width: " + width + "px; min-height: " + height + "px;"
-      //this._hintColor.set_size(width, height);
-      this._setStyle();
-   },
+IconButton.prototype = {
+   __proto__: Button.prototype,
 
-   _setStyle: function() {
-       this._hintColor.style = this.minimumSize + "border: 1px solid rgba(0,0,0,0.1); border-radius: 6px;" +
-           " background-color: rgba(" + this.color.red + "," + this.color.green + "," + this.color.blue + "," + this.color.alpha/255 + ");";
-   },
+   _init: function(iconName, iconType, iconSize, width, height) {
+      Button.prototype._init.call(this, "", width, height);
+      this.actor._delegate = this;
+      this.actor.add_style_class_name('button-icon');
+      if(!iconType)
+         iconType = St.IconType.FULLCOLOR;
+      this.icon = new St.Icon({ icon_name: iconName, icon_type: iconType });
+
+      this.actor.style = "padding: 2px 2px; border-radius: 6px;";
+      this.actor.set_child(this.icon);
+      this.icon.set_icon_size(iconSize);
+   }
 };
 
 function ColorPalette() {
@@ -1300,14 +1366,17 @@ function ColorPalette() {
 
 ColorPalette.prototype = {
    _init: function(palette) {
-      this.palette = palette;
       this.actor = new St.BoxLayout({ style_class: 'color-palette', vertical: true });
-      if(this.palette)
+      this.actor._delegate = this;
+
+      this._buttons = new Array();
+      this._palette = palette;
+      if(this._palette)
          this._buildPalete();
    },
 
    loadDefault: function() {
-      this.palette = [
+      this._palette = [
          ["#000"   , "#444"   , "#666"   , "#999"   , "#ccc"   , "#eee"   , "#f3f3f3", "#fff"   ],
          ["#f00"   , "#f90"   , "#ff0"   , "#0f0"   , "#0ff"   , "#00f"   , "#90f"   , "#f0f"   ],
          ["#f4cccc", "#fce5cd", "#fff2cc", "#d9ead3", "#d0e0e3", "#cfe2f3", "#d9d2e9", "#ead1dc"],
@@ -1328,31 +1397,31 @@ ColorPalette.prototype = {
          colors = colorRows[row].split(",");
          palette.push(colors);
       }
-      this.palette = palette;
+      this._palette = palette;
       this._buildPalete();
    },
 
    saveToString: function() {
       let colorRows = new Array();
-      for(let row in this.palette)
-         colorRows.push(this.palette[row].join(','));
+      for(let row in this._palette)
+         colorRows.push(this._palette[row].join(','));
       return colorRows.join('::');
    },
 
    addColor: function(colorString) {
       let paletteRow;
-      for(let posRow = this.palette.length - 1; posRow > 0; posRow--) {
-         paletteRow = this.palette[posRow];
+      for(let posRow = this._palette.length - 1; posRow > 0; posRow--) {
+         paletteRow = this._palette[posRow];
          for(let pos = paletteRow.length - 1; pos > 0; pos--) {
             paletteRow[pos] = paletteRow[pos - 1];
          }
-         paletteRow[0] = this.palette[posRow - 1][this.palette[posRow - 1].length - 1];
+         paletteRow[0] = this._palette[posRow - 1][this._palette[posRow - 1].length - 1];
       }
-      paletteRow = this.palette[this.palette.length -1];
+      paletteRow = this._palette[this._palette.length -1];
       for(let pos = paletteRow.length - 1; pos > 0; pos--) {
          paletteRow[pos] = paletteRow[pos - 1];
       }
-      paletteRow = this.palette[0][0] = colorString;
+      paletteRow = this._palette[0][0] = colorString;
       this._fillPalete();
    },
 
@@ -1362,7 +1431,7 @@ ColorPalette.prototype = {
       let rowChildren = this.actor.get_children();
       for(let posRow in rowChildren) {
          actorRow = rowChildren[posRow];
-         paletteRow = this.palette[posRow];
+         paletteRow = this._palette[posRow];
          children = actorRow.get_children();
          for(let pos in children) {
             actorColor = children[pos];
@@ -1372,11 +1441,11 @@ ColorPalette.prototype = {
             else
                color = defaultColor;
             actorColor._delegate.setValue(color);
-            actorColor._delegate.button.remove_style_pseudo_class('disabled');
-            actorColor._delegate.button.set_reactive(true);
+            actorColor._delegate.actor.remove_style_pseudo_class('disabled');
+            actorColor._delegate.actor.set_reactive(true);
             if(color.alpha == 0) {
-               actorColor._delegate.button.add_style_pseudo_class('disabled');
-               actorColor._delegate.button.set_reactive(false);
+               actorColor._delegate.actor.add_style_pseudo_class('disabled');
+               actorColor._delegate.actor.set_reactive(false);
             }
          }
       }
@@ -1385,10 +1454,11 @@ ColorPalette.prototype = {
    _buildPalete: function() {
       let paletteRow, actorRow, bbt, color;
       let [result, defaultColor] = Clutter.Color.from_string("#00000000");
+      this._destroyButtons();
       this.actor.destroy_all_children();
-      for(let row in this.palette) {
+      for(let row in this._palette) {
          actorRow = new St.BoxLayout({ vertical: false });
-         paletteRow = this.palette[row];
+         paletteRow = this._palette[row];
          for(let pos in paletteRow) {
             let [res, selectedColor] = Clutter.Color.from_string(paletteRow[pos]);
             if(res)
@@ -1396,14 +1466,15 @@ ColorPalette.prototype = {
             else
                color = defaultColor;
             bbt = new ColorButton(color, 24, 24);
-            bbt.button.connect('button-release-event', Lang.bind(this, this._onButtonRelease));
-            bbt.button.remove_style_pseudo_class('disabled');
-            bbt.button.set_reactive(true);
+            bbt.actor.connect('button-release-event', Lang.bind(this, this._onButtonRelease));
+            bbt.actor.remove_style_pseudo_class('disabled');
+            bbt.actor.set_reactive(true);
             if(color.alpha == 0) {
-               bbt.button.add_style_pseudo_class('disabled');
-               bbt.button.set_reactive(false);
+               bbt.actor.add_style_pseudo_class('disabled');
+               bbt.actor.set_reactive(false);
             }
             actorRow.add_actor(bbt.actor);
+            this._buttons.push(bbt);
          }
          this.actor.add_actor(actorRow);
       }
@@ -1413,6 +1484,20 @@ ColorPalette.prototype = {
       if(!actor.has_style_pseudo_class('disabled'))
          this.emit("select-color", actor._delegate.value);
    },
+
+   _destroyButtons: function() {
+      for(let pos in this._buttons)
+         this._buttons[pos].destroy();
+      this._buttons = new Array();
+   },
+
+   destroy: function() {
+      this._palette = null;
+      this._destroyButtons();
+      this._buttons = null;
+      this.actor.destroy();
+      this.emit("destroy");
+   }
 };
 Signals.addSignalMethods(ColorPalette.prototype);
 
@@ -1422,8 +1507,10 @@ function ColorInspector() {
 
 ColorInspector.prototype = {
    _init: function(color, width, height) {
-      this._selectedColor = color;
       this.actor = new St.BoxLayout({ style_class: 'color-inspector', vertical: false });
+      this.actor._delegate = this;
+
+      this._selectedColor = color;
       this._colorHint = new ColorButton(color, width, height);
       this._entryColor = new St.Entry({ name: 'menu-search-entry', hint_text: _("Type a color..."), track_hover: true, can_focus: true });
       this._entryColor.style = "width: -1px; min-width: 100px; font-family: monospace;";//color-entry
@@ -1434,7 +1521,7 @@ ColorInspector.prototype = {
 
       //this.entryColor.clutter_text.connect('text-changed', Lang.bind(this, this._onColorTextChanged));
       this._entryColor.clutter_text.connect('key-press-event', Lang.bind(this, this._onColorTextChanged));
-      this._colorHint.button.connect('button-release-event', Lang.bind(this, this._onButtonRelease));
+      this._colorHint.actor.connect('button-release-event', Lang.bind(this, this._onButtonRelease));
    },
 
    setFocusKeyFocus: function() {
@@ -1492,6 +1579,7 @@ ColorInspector.prototype = {
    destroy: function() {
       this._colorHint.destoy();
       this.actor.destroy();
+      this.emit("destroy");
    }
 };
 Signals.addSignalMethods(ColorInspector.prototype);

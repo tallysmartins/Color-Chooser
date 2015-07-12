@@ -1,7 +1,9 @@
 {
     "uuid": "colorChooser@lestcape",
     "name": "Color Chooser",
-    "description": "A color chooser",
+    "description": "A color chooser.",
+    "comments": "A color chooser.",
     "version": 0.1,
-    "url": "https://github.com/lestcape/Color-Chooser"
+    "contributors": "Authors: Lester Carballo P\u00e9rez",
+    "website": "https://github.com/lestcape/Color-Chooser"
 }
