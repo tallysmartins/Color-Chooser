@@ -905,8 +905,8 @@ GradientSelector.prototype = {
 
    _getColorAtPos: function(posX, posY) {
       let [aW, aH] = this._container.get_transformed_size();
-      let colorPosX = parseInt((posX*256)/(aW));
-      let colorPosY = parseInt((posY*256)/(aH));
+      let colorPosX = parseInt((posX*255)/(aW));
+      let colorPosY = parseInt((posY*255)/(aH));
       let colorPos = 4 *(256 * colorPosY + colorPosX);
       let color = Clutter.Color.new(this._data[colorPos], this._data[colorPos + 1], this._data[colorPos + 2], 255);
       return color;
@@ -968,8 +968,8 @@ GradientSelector.prototype = {
       if((posX < 0)||(posX >= aW)||(posY < 0)||(posY >= aH)) {
          if(posX < 0) posX = 0;
          if(posY < 0) posY = 0;
-         if(posX >= aW) posX = aW - 1;
-         if(posY >= aH) posY = aH - 1;
+         if(posX > aW) posX = aW;
+         if(posY > aH) posY = aH;
       }
       this._setHandle(posX, posY);
    },
