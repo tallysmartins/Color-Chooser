@@ -516,10 +516,10 @@ Scale.prototype = {
       let sliderBorderRadius, handleX, handleY, startX, startY, endX, endY, deltaX, deltaY, angle;
       if(this.vertical) {
          sliderBorderRadius = Math.min(height, sliderHeight) / 2;
-         handleY = handleRadius + (height - 2 * handleRadius) * this._value;
+         handleY = handleRadius + (height - 4 * handleRadius) * this._value;
          handleX = width / 2;
          startX = handleX;
-         startY = sliderBorderRadius + sliderBorderWidth;
+         startY = sliderBorderRadius + sliderBorderWidth + handleRadius;
          endX = startX;
          endY = height - startY;
          deltaX = 0;
@@ -528,6 +528,7 @@ Scale.prototype = {
 
          cr.arc(startX, startY, sliderBorderRadius, angle, angle + Math.PI);
          cr.arc(endX, endY, sliderBorderRadius, angle + Math.PI, angle);
+         cr.lineTo(startX - sliderBorderRadius, startY);
 
          Clutter.cairo_set_source_color(cr, sliderColor);
          cr.fillPreserve();
@@ -538,17 +539,18 @@ Scale.prototype = {
          let color = themeNode.get_foreground_color();
          Clutter.cairo_set_source_color(cr, color);
 
-         cr.lineTo(handleX, handleY + sliderBorderRadius + sliderHeight);
-         cr.lineTo(handleX + sliderBorderRadius + sliderHeight, handleY);
-         cr.lineTo(handleX, handleY - sliderBorderRadius - sliderHeight);
-         cr.lineTo(handleX - sliderHeight, handleY - sliderBorderRadius - sliderHeight);
-         cr.lineTo(handleX - sliderHeight, handleY + sliderBorderRadius + sliderHeight);
+
+         cr.lineTo(handleX, handleY + 2*handleRadius);
+         cr.lineTo(handleX + handleRadius + sliderHeight, handleY + handleRadius);
+         cr.lineTo(handleX, handleY);
+         cr.lineTo(handleX - sliderHeight, handleY);
+         cr.lineTo(handleX - sliderHeight, handleY + 2*handleRadius);
          cr.fill();
       } else {
          sliderBorderRadius = Math.min(width, sliderHeight) / 2;
-         handleX = handleRadius + (width - 2 * handleRadius) * this._value;
+         handleX = handleRadius + (width - 4 * handleRadius) * this._value;
          handleY = height / 2;
-         startX = sliderBorderRadius + sliderBorderWidth;
+         startX = sliderBorderRadius + sliderBorderWidth + handleRadius;
          startY = handleY;
          endX = width - startX;
          endY = startY;
@@ -558,6 +560,7 @@ Scale.prototype = {
 
          cr.arc(startX, startY, sliderBorderRadius, angle, angle + Math.PI);
          cr.arc(endX, endY, sliderBorderRadius, angle + Math.PI, angle);
+         cr.lineTo(startX - sliderBorderRadius, startY);
 
          Clutter.cairo_set_source_color(cr, sliderColor);
          cr.fillPreserve();
@@ -568,11 +571,11 @@ Scale.prototype = {
          let color = themeNode.get_foreground_color();
          Clutter.cairo_set_source_color(cr, color);
 
-         cr.lineTo(handleX - sliderBorderRadius - sliderHeight, handleY);
-         cr.lineTo(handleX, handleY - sliderBorderRadius - sliderHeight);
-         cr.lineTo(handleX + sliderBorderRadius + sliderHeight, handleY);
-         cr.lineTo(handleX + sliderBorderRadius + sliderHeight, handleY + sliderHeight);
-         cr.lineTo(handleX - sliderBorderRadius - sliderHeight, handleY + sliderHeight);
+         cr.lineTo(handleX, handleY);
+         cr.lineTo(handleX + handleRadius, handleY - handleRadius - sliderHeight);
+         cr.lineTo(handleX + 2*handleRadius, handleY);
+         cr.lineTo(handleX + 2*handleRadius, handleY + sliderHeight);
+         cr.lineTo(handleX, handleY + sliderHeight);
          cr.fill();
       }
       cr.$dispose();
@@ -688,7 +691,7 @@ ScaleSpectrum.prototype = {
 
    _allocate: function(actor, box, flags) {
       let themeNode = this._slider.get_theme_node();
-      let sliderHeight = themeNode.get_length('-slider-height') + 2;
+      let handleRadius = themeNode.get_length('-slider-handle-radius');
 
       let cChildBox = new Clutter.ActorBox();
       let sChildBox = new Clutter.ActorBox();
@@ -698,9 +701,9 @@ ScaleSpectrum.prototype = {
       sChildBox.y1 = box.y1;
       sChildBox.y2 = maxHeight;
       cChildBox.x1 = sChildBox.x2 - this._scale.width/2 + 4;
-      cChildBox.x2 = sChildBox.x2 + this._container.width;
-      cChildBox.y1 = box.y1 + sliderHeight;
-      cChildBox.y2 = maxHeight - sliderHeight;
+      cChildBox.x2 = sChildBox.x2 + this._container.width - this._scale.width/2 + 4;
+      cChildBox.y1 = box.y1 + 2*handleRadius;
+      cChildBox.y2 = maxHeight - 2*handleRadius;
       this._container.allocate(cChildBox, flags);
       this._scale.allocate(sChildBox, flags);
    },
@@ -818,7 +821,7 @@ GradientSelector.prototype = {
       let posX = 0;
       let posY = 0;
       let count = 0;
-      for(pos in positions) {
+      for(let pos in positions) {
          if(positions[pos]) {
             posX += positions[pos][0];
             posY += positions[pos][1];
