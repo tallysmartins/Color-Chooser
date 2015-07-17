@@ -836,7 +836,7 @@ GradientSelector.prototype = {
       let posY = 0;
       let count = 0;
       for(let pos in positions) {
-         if(positions[pos]) {
+         if(positions[pos] != null) {
             posX += positions[pos][0];
             posY += positions[pos][1];
             count++
@@ -850,15 +850,14 @@ GradientSelector.prototype = {
    _findForColor: function(sColor1, sColor2, color1, color2) {
       let d = color1*(255 - sColor2) - color2*(255 - sColor1);
       let x = -1;
-      if(d > 0) {
+      if(d != 0) {
          let y = Math.round(255*(color2*sColor1 - color1*sColor2)/d);
-         if(y > 0) {
+         if(y >= 0) {
             if(color1 > 0)
                x = Math.round(255*(1 - 255*color1/(255*sColor1 + y*(255 - sColor1))));
             else
                x = Math.round(255*(1 - 255*color2/(255*sColor2 + y*(255 - sColor2))));
-            if(x >= 0)
-               return [x, y];
+            return [x, y];
          }
       }
       return null;
@@ -896,15 +895,6 @@ GradientSelector.prototype = {
                this._data[pos + 1] = Math.round(green);
                this._data[pos + 2] = Math.round(blue);//blue
                this._data[pos + 3] = 255;//255 - x;//opacity
-               /*if(pos == 0) {
-                   Main.notify("found:" + this._data[pos + 0] + " " + this._data[pos + 1] + " " + this._data[pos + 2])
-                   Main.notify("color:" + color.red + " " + color.green + " " + color.blue)
-               }
-               if((this._selectedColor)&&(this._selectedColor.red == this._data[pos]) &&
-                  (this._selectedColor.green == this._data[pos + 1]) &&
-                  (this._selectedColor.blue == this._data[pos + 2])) {
-                  Main.notify("is there")
-               }*/
             }
          }
          if(this._updateIsNeeded) {
