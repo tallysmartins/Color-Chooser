@@ -100,18 +100,20 @@ function ColorChooser() {
 }
 
 ColorChooser.prototype = {
-   _init: function(color) {
+   _init: function(color, useClipboard) {
       try {
          this.actor = new St.BoxLayout({ vertical: true });
          this.actor._delegate = this;
+         this._clipboard = St.Clipboard.get_default();
+         this.useClipboard = (useClipboard == true);
 
+         let [res, colorInit] = Clutter.Color.from_string("#FF0000FF");
          if(!color) {
-            let [res, colorInit] = Clutter.Color.from_string("#FF0000FF");
             color = colorInit;
          }
 
-         this.spectrum = new ScaleSpectrum(color, [2, -1, 3, -2, 1, -3]);
-         this.gradient = new GradientSelector(color);
+         this.spectrum = new ScaleSpectrum(color, colorInit, [2, -1, 3, -2, 1, -3]);
+         this.gradient = new GradientSelector(this.spectrum.value, color);
          this.opacity = new Slider(color.alpha);
          this.palette = new ColorPalette();
          this.savePalette = new ColorPalette();
@@ -172,7 +174,7 @@ ColorChooser.prototype = {
          this.signalManager.connect(this.colorInspector, 'color-changed', this._onSelectedColorChange);
          this.signalManager.connect(this.colorInspector, 'color-format-changed', this._onColorFormatChange);
          this.pickerIcon.actor.connect('button-release-event', Lang.bind(this, this._executePicker));
-         this.saveButton.actor.connect('button-release-event', Lang.bind(this, this._saveColor));
+         this.saveButton.actor.connect('button-release-event', Lang.bind(this, this._onColorSave));
       } catch (e) {
          global.logError(e);
       }
@@ -212,15 +214,24 @@ ColorChooser.prototype = {
       this.savePalette.loadFromString(stringPalette);
    },
 
+   saveToClipboard: function(useClipboard) {
+      this.useClipboard = (useClipboard == true);
+   },
+
    _executePicker: function() {
       let dropper = new EyeDropper(this, Lang.bind(this, this._onSelectedColorChange));
    },
 
-   _saveColor: function() {
-      let color = this.colorInspector.value;
-      this.savePalette.addColor(color.to_string());
+   _onColorSave: function() {
+      if(this.useClipboard) {
+         let colorString = this.colorInspector.getStringColor();
+         this._clipboard.set_text(colorString);
+      }
+
+      let color = this.colorInspector.value.to_string();
+      this.savePalette.addColor(color);
       let stringPalette = this.savePalette.saveToString();
-      this.emit('saved-colors-changed', stringPalette);
+      this.emit('saved-color-changed', color, stringPalette);
    },
 
    _updateColor: function(color) {
@@ -496,6 +507,7 @@ Scale.prototype = {
 
    _init: function(value, vertical) {
       Slider.prototype._init.call(this, value, vertical);
+      this._slider.add_style_class_name('popup-scale-menu-item');
       this._slider.style = "min-width: 20px; min-height: 20px;";
       this.actor._delegate = this;
    },
@@ -589,10 +601,11 @@ function ScaleSpectrum() {
 ScaleSpectrum.prototype = {
    __proto__: Scale.prototype,
 
-   _init: function(initColor, sequence) {
+   _init: function(color, initColor, sequence) {
       Scale.prototype._init.call(this, 0, true);
 
       this._scale = this.actor;
+      this._slider.add_style_class_name('color-scale');
       this.actor = new Cinnamon.GenericContainer({ reactive: true });
       this.actor._delegate = this;
       this._container = new St.Bin({ style_class: 'color-spectrum', x_fill: true, y_fill: true, x_align: St.Align.START });
@@ -601,6 +614,9 @@ ScaleSpectrum.prototype = {
       this._generateSpectrum(initColor, sequence);
       this._container.set_child(this._imageActor);
       this._imageActor.set_reactive(true);
+
+      let [hue, luminance, saturation] = color.to_hls();
+      this._value = (hue/360);
 
       this.actor.add_actor(this._container);
       this.actor.add_actor(this._scale);
@@ -722,7 +738,7 @@ function GradientSelector() {
 
 GradientSelector.prototype = {
 
-   _init: function(color) {
+   _init: function(color, selectedColor) {
       this.actor = new Cinnamon.GenericContainer({ style_class: 'color-gradient', reactive: true });
       this.actor._delegate = this;
       this._container = new St.Bin({ x_fill: true, y_fill: true, x_align: St.Align.START });
@@ -737,20 +753,18 @@ GradientSelector.prototype = {
       this._releaseId = 0;
       this._isInUpdate = false;
       this._updateIsNeeded = false;
+
       this._color = color;
-      this._selectedColor = color;
+      this._selectedColor = selectedColor;
 
       this._data = new Array(4*256*256);
       this._imageActor = this._getGradientImage();
       this._container.set_child(this._imageActor);
       this._imageActor.set_reactive(true);
+      this._initGradient();
 
       this.actor.add_actor(this._container);
       this.actor.add_actor(this._cursor.actor);
-
-      this._updateColor(color);
-      this._cursor.setColor(color);
-      this._imageActor.content.set_data(this._data, Cogl.PixelFormat.RGBA_8888, 256, 256, 1024);
 
       this.actor.connect('get-preferred-width', Lang.bind(this, this._getPreferredWidth));
       this.actor.connect('get-preferred-height', Lang.bind(this, this._getPreferredHeight));
@@ -771,20 +785,9 @@ GradientSelector.prototype = {
    selectTargetColor: function(color) {
      if((!this._selectedColor)||(!this._selectedColor.equal(color))) {
          this._selectedColor = color;
-         let pos = this._findColorPos(color);
-         if(pos == -1)
-            pos = this._estimateColorPos(this._selectedColor, color);
-         if(pos != -1) {
-            let x = (pos/4)%256;
-            let y = pos/(4*256);
-            let [aW, aH] = this._container.get_transformed_size();
-            let xPos = (aW*x/256);
-            let yPos = (aH*y/256);
-            this._setHandle(xPos, yPos);
-         } else  {
-            global.logError("Fail to found position");
-            //Main.notify("Fail to found position");
-         }
+         let pos = this._getPosFromColor(color);
+         if(pos != -1)
+            this._setHandle((pos/4)%256, pos/(4*256));
       }
    },
 
@@ -795,6 +798,17 @@ GradientSelector.prototype = {
 
    setSize: function(width, height) {
       this.actor.set_size(width, height);
+   },
+
+   _initGradient: function() {
+      this._updateColor(this._color);
+      this._cursor.setColor(this._selectedColor);
+      this._imageActor.content.set_data(this._data, Cogl.PixelFormat.RGBA_8888, 256, 256, 1024);
+      let pos = this._getPosFromColor(this._selectedColor);
+      if(pos != -1) {
+         this._targetX = Math.round((pos/4)%256);
+         this._targetY = Math.round(pos/(4*256));
+      }
    },
 
    _getGradientImage: function() {
@@ -903,10 +917,20 @@ GradientSelector.prototype = {
       }
    },
 
+   _getPosFromColor: function(color) {
+      let pos = this._findColorPos(color);
+      if(pos == -1)
+         pos = this._estimateColorPos(this._color, color);
+      if(pos == -1) {
+         global.logError("Fail to found position");
+         //Main.notify("Fail to found position");
+      }
+      return pos;
+   },
+
    _getColorAtPos: function(posX, posY) {
-      let [aW, aH] = this._container.get_transformed_size();
-      let colorPosX = parseInt((posX*255)/(aW));
-      let colorPosY = parseInt((posY*255)/(aH));
+      let colorPosX = parseInt((posX/256)*255);
+      let colorPosY = parseInt((posY/256)*255);
       let colorPos = 4 *(256 * colorPosY + colorPosX);
       let color = Clutter.Color.new(this._data[colorPos], this._data[colorPos + 1], this._data[colorPos + 2], 255);
       return color;
@@ -971,13 +995,13 @@ GradientSelector.prototype = {
          if(posX > aW) posX = aW;
          if(posY > aH) posY = aH;
       }
-      this._setHandle(posX, posY);
+      this._setHandle(256*posX/aW, 256*posY/aH);
    },
 
    _setHandle: function(posX, posY) {
-      this._targetX = posX;
-      this._targetY = posY;
-      let color = this._getColorAtPos(posX, posY);
+      this._targetX = Math.round(posX);
+      this._targetY = Math.round(posY);
+      let color = this._getColorAtPos(this._targetX, this._targetY);
       if((!this._selectedColor) || (color != this._selectedColor)) {
          this._selectedColor = color;
          this._cursor.setColor(color);
@@ -987,14 +1011,16 @@ GradientSelector.prototype = {
    },
 
    _allocate: function(actor, box, flags) {
+      let posX = (box.x2 - box.x1)*this._targetX/256;
+      let posY = (box.y2 - box.y1)*this._targetY/256;
       this._container.allocate(box, flags);
       this._currentBox = box;
       this._currentFlags = flags;
       let [minWidth, minHeight, naturalWidth, naturalHeight] = this._cursor.actor.get_preferred_size();
       let childBox = new Clutter.ActorBox();
-      childBox.x1 = this._currentBox.x1 + this._targetX - naturalWidth/2;
+      childBox.x1 = this._currentBox.x1 + posX - naturalWidth/2;
       childBox.x2 = childBox.x1 + naturalWidth;
-      childBox.y1 = this._currentBox.y1 + this._targetY - naturalHeight/2;
+      childBox.y1 = this._currentBox.y1 + posY - naturalHeight/2;
       childBox.y2 = childBox.y1 + naturalHeight;
       this._cursor.actor.allocate(childBox, this._currentFlags);
    },
@@ -1565,6 +1591,10 @@ ColorInspector.prototype = {
          this._entryColor.set_text("HSLA(%s,%s,%s,%s)".format(hue, s, l, a));
       } 
       this._colorHint.setValue(color);
+   },
+
+   getStringColor: function() {
+      return this._entryColor.get_text();
    },
 
    _onColorTextChanged: function(actor, event) {

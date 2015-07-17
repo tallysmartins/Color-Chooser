@@ -1,10 +1,10 @@
 {
     "website": "https://github.com/lestcape/Color-Chooser", 
-    "description": "A color chooser.", 
-    "contributors": "Authors: Lester Carballo P\u00e9rez", 
-    "comments": "A color chooser.", 
     "name": "Color Chooser", 
+    "contributors": "Authors: Lester Carballo P\u00e9rez", 
+    "uuid": "colorChooser@lestcape", 
+    "comments": "A color chooser.", 
     "version": 0.1, 
-    "last-edited": "1436709402", 
-    "uuid": "colorChooser@lestcape"
+    "last-edited": "1436711247", 
+    "description": "A color chooser."
 }

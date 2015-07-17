@@ -1,9 +1,15 @@
-# Color Chooser: v0.1
+# Color Chooser
 ![](https://raw.githubusercontent.com/lestcape/Color-Chooser/master/colorChooser%40lestcape/Capture.png)
 
 Change log:
 --------------
-0.1-Beta
+0.2
+  - Remember the last color on cinnamon restart.
+  - Make possible modify some css selectors.
+  - Added an option to save the color in the clipboard.
+  - Added an option to use symbolic or full color icon.
+
+0.1
   - Initial release.
 
 This program is free software:

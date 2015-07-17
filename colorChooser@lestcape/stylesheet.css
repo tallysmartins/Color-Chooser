@@ -1,5 +1,6 @@
 .color-inspector {
     padding: 10px 10px;
+    spacing: 10px;
 }
 
 .color-entry {
@@ -11,6 +12,11 @@
 .color-spectrum {
     min-width: 14px;
     min-height: 100px;
+}
+
+.color-scale {
+    min-width: 20px;
+    min-height: 20px
 }
 
 .color-gradient {
