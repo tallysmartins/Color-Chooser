@@ -193,8 +193,8 @@ ColorChooser.prototype = {
       }
    },
 
-   setFocusKeyFocus: function(palette) {
-      this.colorInspector.setFocusKeyFocus();
+   setKeyFocus: function() {
+      this.colorInspector.setKeyFocus();
    },
 
    setFormat: function(format) {
@@ -1543,7 +1543,7 @@ ColorInspector.prototype = {
       this._colorHint.actor.connect('button-release-event', Lang.bind(this, this._onButtonRelease));
    },
 
-   setFocusKeyFocus: function() {
+   setKeyFocus: function() {
       global.stage.set_key_focus(this._entryColor);
    },
 

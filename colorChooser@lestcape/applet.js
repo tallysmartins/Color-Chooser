@@ -118,7 +118,7 @@ MyApplet.prototype = {
 
    _onOpenStateChanged: function(menu, open) {
       if(open) {
-         this.chooser.setFocusKeyFocus();
+         this.chooser.setKeyFocus();
       }
    },
 
