@@ -1030,8 +1030,12 @@ function CursorColor() {
 CursorColor.prototype = {
    _init: function(size, color, forScreen) {
       this.actor = new St.DrawingArea({ style_class: 'color-cursor', reactive: true });
+      this.colorActor = new St.DrawingArea({ style_class: 'color-cursor', reactive: false });
       this.actor.set_size(size, size);
+      this.colorActor.set_size(size, size);
+      this.actor.add_actor(this.colorActor);
       this.actor.connect('repaint', Lang.bind(this, this._onCursorRepaint));
+      this.colorActor.connect('repaint', Lang.bind(this, this._onColorCursorRepaint));
       this._color = color;
       let [resW, blackColor] = Clutter.Color.from_string("#000000");
       let [resB, whiteColor] = Clutter.Color.from_string("#FFFFFF");
@@ -1084,19 +1088,11 @@ CursorColor.prototype = {
 
    setSize: function(size) {
       this.actor.set_size(size, size);
+      this.colorActor.set_size(size, size);
    },
 
    getSize: function() {
-      return Math.min(this.actor.width, this.actor.height);
-   },
-
-   getColorForScreen: function() {
-      let [mX, mY, mask] = global.get_pointer();
-      let size = this.getSize();
-      let window = Gdk.Screen.get_default().get_root_window();
-      let pixbuf = Gdk.pixbuf_get_from_window(window, mX + size/2, mY + size/2, 1, 1);
-      let data = pixbuf.get_pixels();
-      return Clutter.Color.new(data[0], data[1], data[2], 255);
+      return Math.max(this.actor.width, this.actor.height);
    },
    
    _getCursorColors: function(color) {
@@ -1110,15 +1106,25 @@ CursorColor.prototype = {
       let [cursorColor, borderColor] = this._getCursorColors(this._color);
       this._cursorColor = cursorColor;
       this._borderColor = borderColor;
+      this.colorActor.queue_repaint();
       this.actor.queue_repaint();
    },
 
    _onAllocationChanged: function() {
-      let color = this.getColorForScreen();
-      if(!this._color.equal(color)) {
-         this._color = color;
-         this._updateCursorColor();
-      }
+      this.colorActor.hide();
+      Mainloop.idle_add(Lang.bind(this, function() {
+          let [mX, mY, mask] = global.get_pointer();
+          let size = this.getSize();
+          let window = Gdk.Screen.get_default().get_root_window();
+          let pixbuf = Gdk.pixbuf_get_from_window(window, mX + size/2, mY + size/2, 1, 1);
+          let data = pixbuf.get_pixels();
+          let color = Clutter.Color.new(data[0], data[1], data[2], 255);
+          if(!this._color.equal(color)) {
+             this._color = color;
+             this._updateCursorColor();
+          }
+          this.colorActor.show();
+      }));
    },
 
    _onCursorRepaint: function(area) {
@@ -1163,6 +1169,22 @@ CursorColor.prototype = {
       cr.setLineWidth(2);
       cr.arc(middle, middle, radius + 1, 0, 2 * Math.PI);
       cr.stroke();
+
+      /*cr.setLineWidth(radius);
+      Clutter.cairo_set_source_color(cr, this._color);
+      cr.arc(middle, middle, 1, 0, 2 * Math.PI);
+      cr.stroke();*/
+
+      cr.$dispose();
+   },
+
+   _onColorCursorRepaint: function(area) {
+      let cr = area.get_context();
+      let themeNode = area.get_theme_node();
+      let [width, height] = area.get_surface_size();
+      let size = Math.min(width, height);
+      let middle = size/2;
+      let radius = 3;
 
       cr.setLineWidth(radius);
       Clutter.cairo_set_source_color(cr, this._color);
@@ -1265,7 +1287,7 @@ EyeDropper.prototype = {
    },
 
    _pickedColor: function() {
-      let color = this._cursor.getColorForScreen();
+      let color = this._cursor.getColor();
       this._callback(this, color);
       this.emit("picked-color", color);
       this.destroy();
@@ -1391,7 +1413,7 @@ ColorPalette.prototype = {
       this._buttons = new Array();
       this._palette = palette;
       if(this._palette)
-         this._buildPalete();
+         this._buildPalette();
    },
 
    loadDefault: function() {
@@ -1405,7 +1427,7 @@ ColorPalette.prototype = {
          ["#900"   , "#b45f06", "#bf9000", "#38761d", "#134f5c", "#0b5394", "#351c75", "#741b47"],
          ["#600"   , "#783f04", "#7f6000", "#274e13", "#0c343d", "#073763", "#20124d", "#4c1130"]
       ];
-      this._buildPalete();
+      this._buildPalette();
    },
 
    loadFromString: function(stringPalette) {
@@ -1417,7 +1439,7 @@ ColorPalette.prototype = {
          palette.push(colors);
       }
       this._palette = palette;
-      this._buildPalete();
+      this._buildPalette();
    },
 
    saveToString: function() {
@@ -1470,7 +1492,7 @@ ColorPalette.prototype = {
       }
    },
 
-   _buildPalete: function() {
+   _buildPalette: function() {
       let paletteRow, actorRow, bbt, color;
       let [result, defaultColor] = Clutter.Color.from_string("#00000000");
       this._destroyButtons();
