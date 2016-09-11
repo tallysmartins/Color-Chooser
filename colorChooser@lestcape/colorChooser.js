@@ -259,7 +259,11 @@ ColorChooser.prototype = {
    },
 
    _onSelectedColorChange: function(actor, color) {
-      this.setCurrentColor(color)
+      this.setCurrentColor(color);
+      // Recover the focus as it's set to the menu actor.
+      Mainloop.idle_add(Lang.bind(this, function() {
+          this.setKeyFocus();
+      }));
    },
 
    _onSpectrumColorChange: function(spectrum, color) {
